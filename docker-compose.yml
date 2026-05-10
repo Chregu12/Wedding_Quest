@@ -15,6 +15,38 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres-engine:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wedding_engine
+      POSTGRES_USER: wedding
+      POSTGRES_PASSWORD: wedding_secret
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_engine_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-scoring:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wedding_scoring
+      POSTGRES_USER: wedding
+      POSTGRES_PASSWORD: wedding_secret
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_scoring_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_scoring"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -43,6 +75,47 @@ services:
       redis:
         condition: service_healthy
 
+  engine-service:
+    build:
+      context: .
+      dockerfile: services/engine-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      APP_PORT: 3003
+      DATABASE_URL: postgresql://wedding:wedding_secret@postgres-engine:5432/wedding_engine
+      REDIS_URL: redis://redis:6379
+      SESSION_SERVICE_URL: http://session-service:3002
+    depends_on:
+      postgres-engine:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      session-service:
+        condition: service_started
+
+  scoring-service:
+    build:
+      context: .
+      dockerfile: services/scoring-service/Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      APP_PORT: 3004
+      DATABASE_URL: postgresql://wedding:wedding_secret@postgres-scoring:5432/wedding_scoring
+      REDIS_URL: redis://redis:6379
+      ENGINE_SERVICE_URL: http://engine-service:3003
+      SESSION_SERVICE_URL: http://session-service:3002
+    depends_on:
+      postgres-scoring:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      engine-service:
+        condition: service_started
+      session-service:
+        condition: service_started
+
   realtime-service:
     build:
       context: .
@@ -58,4 +131,6 @@ services:
 
 volumes:
   postgres_session_data:
+  postgres_engine_data:
+  postgres_scoring_data:
   redis_data:

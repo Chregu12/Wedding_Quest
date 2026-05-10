@@ -1,0 +1,227 @@
+<!-- Top Nav -->
+<nav class="bg-white shadow-sm border-b border-rose-100">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">💍</span>
+      <span class="font-bold text-rose-600 text-lg">Wedding Quest</span>
+      <span class="text-gray-300">|</span>
+      <span class="text-sm text-gray-600">Live Game Control</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="bg-rose-100 text-rose-700 font-mono font-bold text-sm px-3 py-1 rounded-full">
+        {{ code() }}
+      </span>
+      <button
+        (click)="goToSetup()"
+        class="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+      >
+        ← Setup
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-7xl mx-auto px-4 py-8">
+  @if (error()) {
+    <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6 text-sm">
+      {{ error() }}
+    </div>
+  }
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- Main Game Area -->
+    <div class="lg:col-span-2 space-y-6">
+
+      <!-- Starting / Loading -->
+      @if (phase() === 'starting' || loading()) {
+        <div class="bg-white rounded-2xl shadow-lg p-12 text-center">
+          <svg class="animate-spin h-10 w-10 text-rose-500 mx-auto mb-4" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <p class="text-gray-500">Spiel wird vorbereitet...</p>
+        </div>
+      }
+
+      <!-- Active Question -->
+      @if ((phase() === 'question' || phase() === 'round-closed') && currentRound()) {
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <!-- Question Header -->
+          <div class="bg-gradient-to-r from-rose-500 to-pink-500 px-6 py-4">
+            <div class="flex items-center justify-between text-white">
+              <span class="text-sm font-medium opacity-90">
+                Frage {{ currentRound()!.round_number }} / {{ currentRound()!.total_questions }}
+              </span>
+              @if (phase() === 'round-closed') {
+                <span class="bg-white/20 text-white text-xs px-3 py-1 rounded-full font-medium">
+                  Runde beendet
+                </span>
+              } @else {
+                <span class="bg-white/20 text-white text-xs px-3 py-1 rounded-full font-medium animate-pulse">
+                  Aktiv
+                </span>
+              }
+            </div>
+          </div>
+
+          <div class="p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-6 leading-relaxed">
+              {{ currentRound()!.question_text }}
+            </h2>
+
+            <!-- Options Grid -->
+            <div class="grid grid-cols-2 gap-3 mb-6">
+              @for (option of ['A', 'B', 'C', 'D']; track option) {
+                <div [class]="'border-2 rounded-xl p-4 transition-all duration-300 ' + getOptionClass(option)">
+                  <div class="flex items-center gap-3">
+                    <span class="font-bold text-lg w-7 h-7 flex items-center justify-center rounded-full bg-white/60 text-sm">
+                      {{ option }}
+                    </span>
+                    <span class="text-sm font-medium">
+                      @if (option === 'A') { {{ currentRound()!.option_a }} }
+                      @if (option === 'B') { {{ currentRound()!.option_b }} }
+                      @if (option === 'C') { {{ currentRound()!.option_c }} }
+                      @if (option === 'D') { {{ currentRound()!.option_d }} }
+                    </span>
+                    @if (isCorrectOption(option)) {
+                      <span class="ml-auto text-green-600 font-bold">✓</span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3">
+              @if (phase() === 'question') {
+                <button
+                  (click)="closeRound()"
+                  [disabled]="loading()"
+                  class="flex-1 bg-rose-500 hover:bg-rose-600 disabled:bg-rose-300 text-white font-semibold py-3 px-6 rounded-full transition-colors"
+                >
+                  Runde beenden 🔒
+                </button>
+              }
+              @if (phase() === 'round-closed') {
+                <button
+                  (click)="nextQuestion()"
+                  [disabled]="loading()"
+                  class="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-semibold py-3 px-6 rounded-full transition-colors"
+                >
+                  Nächste Frage →
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Ich oder Du Phase -->
+      @if (phase() === 'ich-oder-du' && closedRound()) {
+        <div class="bg-white rounded-2xl shadow-lg p-6">
+          <div class="text-center mb-6">
+            <div class="text-4xl mb-3">💑</div>
+            <h2 class="text-2xl font-bold text-gray-800">Ich oder Du?</h2>
+            @if (closedRound()!.ich_oder_du_text) {
+              <p class="text-gray-600 mt-2 text-lg">{{ closedRound()!.ich_oder_du_text }}</p>
+            }
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <button
+              (click)="submitCoupleAnswer('ich')"
+              [disabled]="loading()"
+              class="py-8 text-2xl font-bold bg-rose-100 hover:bg-rose-200 disabled:bg-rose-50 text-rose-700 rounded-2xl border-2 border-rose-300 transition-colors"
+            >
+              💁 Ich
+            </button>
+            <button
+              (click)="submitCoupleAnswer('du')"
+              [disabled]="loading()"
+              class="py-8 text-2xl font-bold bg-purple-100 hover:bg-purple-200 disabled:bg-purple-50 text-purple-700 rounded-2xl border-2 border-purple-300 transition-colors"
+            >
+              Du 💁
+            </button>
+          </div>
+
+          <div class="mt-4 text-center">
+            <p class="text-sm text-gray-400">Richtige Antwort der letzten Runde war: <strong>{{ closedRound()!.correct_answer }}</strong></p>
+          </div>
+        </div>
+      }
+
+      <!-- Couple Answered Phase -->
+      @if (phase() === 'couple-answered') {
+        <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
+          <div class="text-5xl mb-4">✅</div>
+          <h2 class="text-xl font-bold text-gray-800 mb-2">Antwort des Paares eingereicht!</h2>
+          <p class="text-gray-500 mb-6">Die Gäste sehen jetzt die Auflösung.</p>
+          <button
+            (click)="nextQuestion()"
+            [disabled]="loading()"
+            class="bg-rose-500 hover:bg-rose-600 disabled:bg-rose-300 text-white font-semibold py-3 px-8 rounded-full transition-colors"
+          >
+            Nächste Frage →
+          </button>
+        </div>
+      }
+
+      <!-- Game Over -->
+      @if (phase() === 'game-over') {
+        <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
+          <div class="text-5xl mb-4">🎉</div>
+          <h2 class="text-2xl font-bold text-gray-800 mb-2">Spiel beendet!</h2>
+          <p class="text-gray-500 mb-6">Alle Fragen wurden gespielt. Herzlichen Glückwunsch!</p>
+          <button
+            (click)="goToSetup()"
+            class="bg-rose-500 hover:bg-rose-600 text-white font-semibold py-3 px-8 rounded-full transition-colors"
+          >
+            Zurück zur Übersicht
+          </button>
+        </div>
+      }
+    </div>
+
+    <!-- Leaderboard Sidebar -->
+    <div class="lg:col-span-1">
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden sticky top-8">
+        <div class="bg-gradient-to-r from-yellow-400 to-orange-400 px-5 py-4">
+          <h3 class="font-bold text-white text-lg">🏆 Rangliste</h3>
+          <p class="text-white/80 text-xs mt-0.5">Aktualisiert alle 3 Sek.</p>
+        </div>
+
+        <div class="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+          @if (scores().length === 0) {
+            <div class="text-center py-8 text-gray-400 text-sm">
+              <div class="text-2xl mb-2">⏳</div>
+              Noch keine Spieler
+            </div>
+          } @else {
+            @for (player of scores(); track player.player_id; let i = $index) {
+              <div class="px-5 py-3.5 flex items-center gap-3"
+                [class]="i === 0 ? 'bg-yellow-50' : i === 1 ? 'bg-gray-50' : i === 2 ? 'bg-orange-50' : ''">
+                <span class="font-bold text-lg w-8 text-center"
+                  [class]="i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-gray-300'">
+                  @if (i === 0) { 🥇 }
+                  @else if (i === 1) { 🥈 }
+                  @else if (i === 2) { 🥉 }
+                  @else { {{ i + 1 }} }
+                </span>
+                <div class="flex-1 min-w-0">
+                  <p class="font-semibold text-gray-800 text-sm truncate">{{ player.player_name }}</p>
+                  <p class="text-xs text-gray-400">{{ player.rounds_played }} Runden</p>
+                </div>
+                <div class="text-right">
+                  <p class="font-bold text-rose-600">{{ player.total_score }}</p>
+                  @if (player.last_round_score > 0) {
+                    <p class="text-xs text-green-500">+{{ player.last_round_score }}</p>
+                  }
+                </div>
+              </div>
+            }
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

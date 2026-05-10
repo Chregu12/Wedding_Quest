@@ -1,0 +1,228 @@
+<div class="min-h-screen bg-gradient-to-br from-pink-50 to-white">
+  <!-- Top Bar -->
+  <div class="bg-white shadow-sm border-b border-rose-100 sticky top-0 z-10">
+    <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-xl">💍</span>
+        <span class="font-bold text-rose-600">Wedding Quest</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-gray-600 font-medium">{{ playerName() }}</span>
+        @if (myRank()) {
+          <span class="bg-yellow-100 text-yellow-700 text-xs font-bold px-2.5 py-1 rounded-full">
+            Platz {{ myRank() }}
+          </span>
+        }
+        <span class="bg-rose-100 text-rose-700 text-xs font-bold px-2.5 py-1 rounded-full">
+          {{ myScore() }} Pkt.
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-lg mx-auto px-4 py-6 space-y-5">
+
+    <!-- Waiting -->
+    @if (phase() === 'waiting') {
+      <div class="bg-white rounded-2xl shadow-lg p-10 text-center mt-12">
+        <div class="text-5xl mb-4 pulse-ring inline-block">⏳</div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Warte auf den Start...</h2>
+        <p class="text-gray-500 text-sm">Das Spiel beginnt gleich. Sei bereit!</p>
+        <div class="flex justify-center mt-6 gap-1">
+          @for (i of [1,2,3]; track i) {
+            <div class="w-2 h-2 rounded-full bg-rose-300 animate-bounce" [style.animation-delay]="(i * 0.15) + 's'"></div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Active Question -->
+    @if (phase() === 'question' || phase() === 'answered' || phase() === 'round-result') {
+      @if (currentQuestion()) {
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <!-- Progress Bar -->
+          <div class="h-1.5 bg-gray-100">
+            <div
+              class="h-full bg-rose-400 transition-all duration-100"
+              [style.width]="countdownWidth() + '%'"
+              [class]="countdownWidth() < 30 ? 'bg-red-500' : countdownWidth() < 60 ? 'bg-yellow-400' : 'bg-rose-400'"
+            ></div>
+          </div>
+
+          <!-- Header -->
+          <div class="bg-gradient-to-r from-rose-500 to-pink-500 px-5 py-3.5">
+            <div class="flex items-center justify-between text-white">
+              <span class="text-sm font-medium opacity-90">
+                Frage {{ currentQuestion()!.round_number }}/{{ currentQuestion()!.total_questions }}
+              </span>
+              @if (phase() === 'answered') {
+                <span class="bg-white/30 text-white text-xs px-2.5 py-0.5 rounded-full">
+                  Antwort eingereicht
+                </span>
+              }
+              @if (phase() === 'round-result') {
+                <span class="bg-white/30 text-white text-xs px-2.5 py-0.5 rounded-full">
+                  Auflösung!
+                </span>
+              }
+            </div>
+          </div>
+
+          <div class="p-5">
+            <!-- Question Text -->
+            <h2 class="text-lg font-bold text-gray-800 mb-5 leading-relaxed min-h-[3rem]">
+              {{ currentQuestion()!.question_text }}
+            </h2>
+
+            <!-- Answer Buttons -->
+            <div class="space-y-3">
+              @for (option of ['A', 'B', 'C', 'D']; track option) {
+                <button
+                  (click)="submitAnswer(option === 'A' ? 'A' : option === 'B' ? 'B' : option === 'C' ? 'C' : 'D')"
+                  [disabled]="answerSubmitted() || answerSubmitting()"
+                  [class]="'answer-btn w-full border-2 rounded-xl px-4 py-3.5 text-left flex items-center gap-3 font-medium disabled:cursor-default transition-all duration-200 ' + getAnswerBtnClass(option)"
+                >
+                  <span class="w-8 h-8 rounded-full bg-white/60 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                    {{ option }}
+                  </span>
+                  <span>{{ getOptionText(option) }}</span>
+                  @if (phase() === 'round-result' && option === correctAnswer()) {
+                    <span class="ml-auto font-bold text-lg">✓</span>
+                  }
+                  @if (phase() === 'round-result' && option === selectedAnswer() && option !== correctAnswer()) {
+                    <span class="ml-auto font-bold text-lg">✗</span>
+                  }
+                </button>
+              }
+            </div>
+
+            <!-- Answered Feedback -->
+            @if (phase() === 'answered' && selectedAnswer()) {
+              <div class="mt-4 bg-rose-50 border border-rose-200 rounded-xl p-3 text-center">
+                <p class="text-rose-700 font-medium text-sm">
+                  Antwort <strong>{{ selectedAnswer() }}</strong> eingereicht! Warte auf die Auflösung...
+                </p>
+              </div>
+            }
+            @if (phase() === 'answered' && !selectedAnswer()) {
+              <div class="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+                <p class="text-gray-500 text-sm">Warte auf die Auflösung...</p>
+              </div>
+            }
+
+            <!-- Round Result Feedback -->
+            @if (phase() === 'round-result') {
+              <div class="mt-4">
+                @if (selectedAnswer() === correctAnswer()) {
+                  <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                    <div class="text-2xl mb-1">🎉</div>
+                    <p class="text-green-700 font-bold">Richtig!</p>
+                  </div>
+                } @else if (selectedAnswer()) {
+                  <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                    <div class="text-2xl mb-1">😬</div>
+                    <p class="text-red-700 font-bold">Leider falsch!</p>
+                    <p class="text-red-500 text-sm mt-1">Richtig war: <strong>{{ correctAnswer() }}</strong></p>
+                  </div>
+                } @else {
+                  <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                    <div class="text-2xl mb-1">⏱️</div>
+                    <p class="text-gray-600 font-medium">Zeit abgelaufen!</p>
+                    <p class="text-gray-500 text-sm mt-1">Richtig war: <strong>{{ correctAnswer() }}</strong></p>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+    }
+
+    <!-- Ich oder Du Phase -->
+    @if (phase() === 'ich-oder-du') {
+      <div class="bg-white rounded-2xl shadow-lg p-8 text-center mt-4">
+        <div class="text-5xl mb-4">💑</div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-3">Ich oder Du?</h2>
+        @if (ichOderDuText()) {
+          <div class="bg-rose-50 rounded-xl p-4 mb-4">
+            <p class="text-rose-800 font-medium text-lg">{{ ichOderDuText() }}</p>
+          </div>
+        }
+        <p class="text-gray-500 text-sm animate-pulse">Das Ehepaar antwortet gerade...</p>
+        <div class="flex justify-center mt-4 gap-4">
+          <div class="bg-rose-100 text-rose-300 text-xl font-bold py-4 px-8 rounded-2xl border-2 border-dashed border-rose-200">
+            Ich
+          </div>
+          <div class="bg-purple-100 text-purple-300 text-xl font-bold py-4 px-8 rounded-2xl border-2 border-dashed border-purple-200">
+            Du
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Couple Answered Phase -->
+    @if (phase() === 'couple-answered') {
+      <div class="bg-white rounded-2xl shadow-lg p-8 text-center mt-4">
+        <div class="text-5xl mb-4">💌</div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Das Ehepaar hat geantwortet!</h2>
+        @if (ichOderDuText()) {
+          <p class="text-gray-600 mb-4">{{ ichOderDuText() }}</p>
+        }
+        @if (coupleAnswer()) {
+          <div class="inline-block bg-rose-500 text-white text-2xl font-bold px-8 py-4 rounded-2xl shadow-md capitalize">
+            {{ coupleAnswer() }}
+          </div>
+        }
+        <p class="text-gray-400 text-sm mt-4">Nächste Frage kommt gleich...</p>
+      </div>
+    }
+
+    <!-- Game Over -->
+    @if (phase() === 'game-over') {
+      <div class="bg-white rounded-2xl shadow-lg p-8 text-center mt-4">
+        <div class="text-5xl mb-4">🎊</div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">Spiel beendet!</h2>
+        @if (myRank()) {
+          <p class="text-gray-600 mb-4">Du hast Platz <strong class="text-rose-600">{{ myRank() }}</strong> erreicht!</p>
+        }
+        <div class="bg-rose-50 rounded-xl p-4 mb-6 inline-block">
+          <p class="text-rose-800 font-bold text-3xl">{{ myScore() }} Punkte</p>
+        </div>
+      </div>
+    }
+
+    <!-- Live Leaderboard -->
+    @if (scores().length > 0 && (phase() === 'round-result' || phase() === 'couple-answered' || phase() === 'game-over')) {
+      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="bg-gradient-to-r from-yellow-400 to-orange-400 px-5 py-3.5">
+          <h3 class="font-bold text-white">🏆 Rangliste</h3>
+        </div>
+        <div class="divide-y divide-gray-50">
+          @for (player of scores(); track player.player_id; let i = $index) {
+            <div
+              class="px-5 py-3 flex items-center gap-3"
+              [class]="player.player_id === playerId() ? 'bg-rose-50' : (i === 0 ? 'bg-yellow-50' : '')"
+            >
+              <span class="w-8 text-center font-bold"
+                [class]="i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-gray-300'">
+                @if (i === 0) { 🥇 }
+                @else if (i === 1) { 🥈 }
+                @else if (i === 2) { 🥉 }
+                @else { {{ i + 1 }} }
+              </span>
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-gray-800 text-sm truncate flex items-center gap-1">
+                  {{ player.player_name }}
+                  @if (player.player_id === playerId()) {
+                    <span class="text-xs bg-rose-200 text-rose-700 px-1.5 py-0.5 rounded-full">Du</span>
+                  }
+                </p>
+              </div>
+              <span class="font-bold text-rose-600">{{ player.total_score }}</span>
+            </div>
+          }
+        </div>
+      </div>
+    }
+  </div>
+</div>

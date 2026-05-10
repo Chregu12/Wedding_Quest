@@ -1,0 +1,25 @@
+[package]
+name = "engine-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rf-core   = { workspace = true }
+rf-web    = { workspace = true }
+rf-orm    = { workspace = true }
+rf-cache  = { workspace = true, features = ["redis-backend"] }
+sea-orm   = { workspace = true }
+axum      = { version = "0.8", features = ["macros"] }
+tokio     = { workspace = true }
+serde     = { workspace = true }
+serde_json = { workspace = true }
+uuid      = { workspace = true }
+chrono    = { workspace = true }
+anyhow    = { workspace = true }
+thiserror = "1"
+dotenvy   = { workspace = true }
+tracing   = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = { workspace = true }
+reqwest   = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rust_decimal = { workspace = true }
