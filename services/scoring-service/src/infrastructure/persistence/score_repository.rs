@@ -1,6 +1,6 @@
 use sea_orm::{
-    sea_query::OnConflict, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder,
+    sea_query::OnConflict, ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder,
 };
 use uuid::Uuid;
 
@@ -8,9 +8,26 @@ use crate::domain::scoring::entity::{PlayerScore, RoundScore};
 use crate::errors::AppError;
 
 use super::models::{
-    player_score::{ActiveModel as PlayerActiveModel, Column as PlayerColumn, Entity as PlayerEntity},
+    player_score::{
+        ActiveModel as PlayerActiveModel, Column as PlayerColumn, Entity as PlayerEntity,
+        Model as PlayerModel,
+    },
     round_score::{ActiveModel as RoundActiveModel, Entity as RoundEntity},
 };
+
+fn model_to_entity(m: PlayerModel) -> PlayerScore {
+    PlayerScore {
+        id: m.id,
+        session_code: m.session_code,
+        player_id: m.player_id,
+        player_name: m.player_name,
+        total_score: m.total_score,
+        rounds_played: m.rounds_played,
+        last_round_score: m.last_round_score,
+        updated_at: m.updated_at.into(),
+        lucky_boost_multiplier: m.lucky_boost_multiplier,
+    }
+}
 
 pub struct ScoreRepository {
     db: DatabaseConnection,
@@ -32,6 +49,7 @@ impl ScoreRepository {
             rounds_played: Set(score.rounds_played),
             last_round_score: Set(score.last_round_score),
             updated_at: Set(score.updated_at.into()),
+            lucky_boost_multiplier: Set(score.lucky_boost_multiplier),
         };
 
         PlayerEntity::insert(model)
@@ -42,6 +60,7 @@ impl ScoreRepository {
                         PlayerColumn::RoundsPlayed,
                         PlayerColumn::LastRoundScore,
                         PlayerColumn::UpdatedAt,
+                        PlayerColumn::LuckyBoostMultiplier,
                     ])
                     .to_owned(),
             )
@@ -49,6 +68,30 @@ impl ScoreRepository {
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?;
 
+        Ok(())
+    }
+
+    /// Set a Lucky Boost multiplier for a specific player (for their next correct answer).
+    pub async fn set_lucky_boost(
+        &self,
+        session_code: &str,
+        player_id: Uuid,
+        multiplier: f64,
+    ) -> Result<(), AppError> {
+        let model = PlayerEntity::find()
+            .filter(PlayerColumn::SessionCode.eq(session_code))
+            .filter(PlayerColumn::PlayerId.eq(player_id))
+            .one(&self.db)
+            .await?;
+
+        if let Some(m) = model {
+            let mut active: PlayerActiveModel = m.into();
+            active.lucky_boost_multiplier = Set(multiplier);
+            active
+                .update(&self.db)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?;
+        }
         Ok(())
     }
 
@@ -88,16 +131,7 @@ impl ScoreRepository {
 
         Ok(models
             .into_iter()
-            .map(|m| PlayerScore {
-                id: m.id,
-                session_code: m.session_code,
-                player_id: m.player_id,
-                player_name: m.player_name,
-                total_score: m.total_score,
-                rounds_played: m.rounds_played,
-                last_round_score: m.last_round_score,
-                updated_at: m.updated_at.into(),
-            })
+            .map(model_to_entity)
             .collect())
     }
 
@@ -113,15 +147,6 @@ impl ScoreRepository {
             .one(&self.db)
             .await?;
 
-        Ok(model.map(|m| PlayerScore {
-            id: m.id,
-            session_code: m.session_code,
-            player_id: m.player_id,
-            player_name: m.player_name,
-            total_score: m.total_score,
-            rounds_played: m.rounds_played,
-            last_round_score: m.last_round_score,
-            updated_at: m.updated_at.into(),
-        }))
+        Ok(model.map(model_to_entity))
     }
 }

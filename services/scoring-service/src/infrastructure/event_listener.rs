@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use rand::seq::SliceRandom;
 use rf_cache::RedisPubSub;
 use rf_orm::DatabaseManager;
 use serde::Deserialize;
@@ -50,7 +51,7 @@ enum GameEvent {
 }
 
 // ---------------------------------------------------------------------------
-// ScoresUpdated event published to `wedding_quest:session:<code>`
+// Events published to `wedding_quest:session:<code>`
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, serde::Serialize)]
@@ -68,6 +69,16 @@ struct PlayerScoreEntry {
     total_score: i32,
     last_round_score: i32,
     rank: usize,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct LuckyBoostEvent<'a> {
+    #[serde(rename = "type")]
+    event_type: &'a str,
+    session_code: &'a str,
+    player_id: Uuid,
+    player_name: String,
+    multiplier: f64,
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +103,6 @@ pub async fn run(
     tracing::info!("Event listener subscribed to wedding_quest:game:*");
 
     while let Some(msg) = rx.recv().await {
-        // Extract session_code from channel: "wedding_quest:game:ABC123"
         let session_code = match msg.channel.strip_prefix("wedding_quest:game:") {
             Some(code) if !code.is_empty() => code.to_string(),
             _ => {
@@ -123,7 +133,6 @@ pub async fn run(
                 tracing::info!("GameEnded for session={session_code}");
             }
             Ok(_) => {
-                // QuestionStarted, IchOderDuStarted, CoupleAnswered — ignored for now
                 tracing::debug!("Ignored event on channel {}", msg.channel);
             }
             Err(e) => {
@@ -151,7 +160,6 @@ async fn handle_round_closed(
     session_client: &Arc<SessionClient>,
     pub_pubsub: &Arc<RedisPubSub>,
 ) -> anyhow::Result<()> {
-    // 1. Fetch player answers from engine-service.
     let answers = engine_client
         .get_round_answers(session_code, round_id)
         .await?;
@@ -161,24 +169,27 @@ async fn handle_round_closed(
         return Ok(());
     }
 
-    // 2. Fetch score config from session-service (defaults if unavailable).
     let config = session_client.get_score_config(session_code).await?;
 
     let repo = ScoreRepository::new(db.connection().clone());
 
-    // 3. Load current aggregate totals for catch-up calculation.
     let existing = repo.find_by_session(session_code).await?;
     let existing_totals: HashMap<Uuid, i32> = existing
         .iter()
         .map(|ps| (ps.player_id, ps.total_score))
         .collect();
 
-    // 4. Calculate scores.
-    let results = score_calculator::calculate_round_scores(&answers, &config, &existing_totals);
+    // Collect pending Lucky Boost multipliers, then reset them to 1.0.
+    let lucky_boosts: HashMap<Uuid, f64> = existing
+        .iter()
+        .filter(|ps| ps.lucky_boost_multiplier > 1.0)
+        .map(|ps| (ps.player_id, ps.lucky_boost_multiplier))
+        .collect();
 
-    // 5. Persist round scores and update aggregate player scores.
+    let results =
+        score_calculator::calculate_round_scores(&answers, &config, &existing_totals, &lucky_boosts);
+
     for result in &results {
-        // Insert round_score row.
         let round_score = RoundScore::new(
             round_id,
             session_code.to_string(),
@@ -191,7 +202,6 @@ async fn handle_round_closed(
         );
         repo.insert_round_score(&round_score).await?;
 
-        // Load or create the player aggregate.
         let mut player_score = repo
             .find_player(session_code, result.player_id)
             .await?
@@ -204,10 +214,14 @@ async fn handle_round_closed(
             });
 
         player_score.apply_round_score(result.final_points);
+        // Reset Lucky Boost after it was applied this round.
+        if lucky_boosts.contains_key(&result.player_id) {
+            player_score.lucky_boost_multiplier = 1.0;
+        }
         repo.upsert_player_score(&player_score).await?;
     }
 
-    // 6. Reload leaderboard and publish ScoresUpdated.
+    // Reload leaderboard and publish ScoresUpdated.
     let leaderboard = repo.find_by_session(session_code).await?;
 
     let score_entries: Vec<PlayerScoreEntry> = leaderboard
@@ -228,14 +242,46 @@ async fn handle_round_closed(
         scores: score_entries,
     };
 
-    let payload = serde_json::to_string(&event)?;
     let channel = format!("wedding_quest:session:{session_code}");
-    pub_pubsub.publish(&channel, &payload).await?;
+    pub_pubsub
+        .publish(&channel, &serde_json::to_string(&event)?)
+        .await?;
 
     tracing::info!(
         "ScoresUpdated published for session={session_code} round={round_id} players={}",
         leaderboard.len()
     );
+
+    // Assign a Lucky Boost to the last-place player (if ≥ 2 players).
+    if leaderboard.len() >= 2 {
+        if let Some(last_place) = leaderboard.last() {
+            let boosts = [1.5f64, 2.0, 3.0];
+            let multiplier = *boosts.choose(&mut rand::thread_rng()).unwrap_or(&1.5);
+
+            if let Err(e) = repo
+                .set_lucky_boost(session_code, last_place.player_id, multiplier)
+                .await
+            {
+                tracing::warn!("Failed to set Lucky Boost: {e}");
+            } else {
+                let boost_event = LuckyBoostEvent {
+                    event_type: "LuckyBoost",
+                    session_code,
+                    player_id: last_place.player_id,
+                    player_name: last_place.player_name.clone(),
+                    multiplier,
+                };
+                pub_pubsub
+                    .publish(&channel, &serde_json::to_string(&boost_event)?)
+                    .await?;
+
+                tracing::info!(
+                    "LuckyBoost x{multiplier} assigned to {} in session={session_code}",
+                    last_place.player_name
+                );
+            }
+        }
+    }
 
     Ok(())
 }

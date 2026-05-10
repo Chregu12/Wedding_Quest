@@ -3,7 +3,7 @@ import { ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { GameService, AnswerRequest } from '../../services/game.service';
-import { WebSocketService, WsMessage, WsQuestionStarted, WsRoundClosed, WsIchOderDuStarted, WsCoupleAnswered, WsScoresUpdated, WsGameEnded } from '../../services/websocket.service';
+import { WebSocketService, WsMessage, WsQuestionStarted, WsRoundClosed, WsIchOderDuStarted, WsCoupleAnswered, WsScoresUpdated, WsGameEnded, WsLuckyBoost } from '../../services/websocket.service';
 import { PlayerScore } from '../../models/score.model';
 
 type GuestPhase =
@@ -52,9 +52,20 @@ export class GuestGameComponent implements OnInit, OnDestroy {
   answerSubmitting = signal(false);
   answerSubmitted = signal(false);
 
+  luckyBoostVisible = signal(false);
+  luckyBoostMultiplier = signal(1);
+
   countdownWidth = signal(100);
   private countdownInterval?: ReturnType<typeof setInterval>;
   private wsSub?: Subscription;
+  private boostTimer?: ReturnType<typeof setTimeout>;
+
+  currentMultiplier = computed(() => {
+    const timeTaken = (100 - this.countdownWidth()) * 30 / 100;
+    if (timeTaken <= 10) return 3;
+    if (timeTaken <= 20) return 2;
+    return 1;
+  });
 
   myRank = computed(() => {
     const id = this.playerId();
@@ -84,6 +95,7 @@ export class GuestGameComponent implements OnInit, OnDestroy {
     this.wsSub?.unsubscribe();
     this.wsService.disconnect();
     this.stopCountdown();
+    clearTimeout(this.boostTimer);
   }
 
   private handleWsMessage(msg: WsMessage): void {
@@ -141,6 +153,16 @@ export class GuestGameComponent implements OnInit, OnDestroy {
           rank: s.rank,
         }));
         this.scores.set(mapped);
+        break;
+      }
+      case 'LuckyBoost': {
+        const lb = msg as WsLuckyBoost;
+        if (lb.player_id === this.playerId()) {
+          this.luckyBoostMultiplier.set(lb.multiplier);
+          this.luckyBoostVisible.set(true);
+          clearTimeout(this.boostTimer);
+          this.boostTimer = setTimeout(() => this.luckyBoostVisible.set(false), 5000);
+        }
         break;
       }
       case 'GameEnded': {
@@ -208,23 +230,22 @@ export class GuestGameComponent implements OnInit, OnDestroy {
     const submitted = this.answerSubmitted();
 
     if (correct !== null) {
-      // Round result phase
-      if (option === correct) return 'bg-green-500 border-green-600 text-white scale-100';
-      if (option === selected && option !== correct) return 'bg-red-400 border-red-500 text-white opacity-80';
-      return 'bg-gray-100 border-gray-200 text-gray-400 opacity-50';
+      if (option === correct) return 'bg-green-600 border-green-500 correct-pop';
+      if (option === selected && option !== correct) return 'bg-red-700 border-red-600 wrong-shake opacity-80';
+      return 'bg-gray-800 border-gray-700 opacity-30';
     }
 
     if (submitted && option === selected) {
-      return 'bg-rose-500 border-rose-600 text-white';
+      return 'bg-rose-700 border-rose-600';
     }
 
     const colors: Record<string, string> = {
-      A: 'bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200',
-      B: 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200',
-      C: 'bg-orange-100 border-orange-300 text-orange-800 hover:bg-orange-200',
-      D: 'bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200',
+      A: 'bg-blue-700 border-blue-500',
+      B: 'bg-emerald-700 border-emerald-500',
+      C: 'bg-orange-600 border-orange-500',
+      D: 'bg-purple-700 border-purple-500',
     };
-    return colors[option] ?? 'bg-gray-100 border-gray-300';
+    return colors[option] ?? 'bg-gray-800 border-gray-700';
   }
 
   getOptionText(option: string): string {

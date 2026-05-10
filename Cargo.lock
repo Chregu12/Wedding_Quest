@@ -2649,6 +2649,7 @@ dependencies = [
  "axum",
  "chrono",
  "dotenvy",
+ "rand 0.8.6",
  "reqwest",
  "rf-cache",
  "rf-core",

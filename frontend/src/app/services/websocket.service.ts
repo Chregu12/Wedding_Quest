@@ -56,6 +56,14 @@ export interface WsGameEnded extends WsMessage {
   session_code: string;
 }
 
+export interface WsLuckyBoost extends WsMessage {
+  type: 'LuckyBoost';
+  player_id: string;
+  player_name: string;
+  multiplier: number;
+  session_code: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class WebSocketService {
   private ws: WebSocket | null = null;

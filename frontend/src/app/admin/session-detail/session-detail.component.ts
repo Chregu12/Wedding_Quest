@@ -32,8 +32,9 @@ export class SessionDetailComponent implements OnInit {
   successMessage = signal<string | null>(null);
   starting = signal(false);
 
-  // QR Code
+  // QR Codes
   qrData = computed(() => `http://localhost:4200/join?code=${this.code()}`);
+  displayUrl = computed(() => `http://localhost:4200/display/${this.code()}`);
 
   // Guest Quiz form
   quizForm = signal<AddGuestQuizRequest>({

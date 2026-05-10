@@ -1,0 +1,2 @@
+ALTER TABLE player_scores
+    ADD COLUMN IF NOT EXISTS lucky_boost_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0;

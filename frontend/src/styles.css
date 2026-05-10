@@ -1,43 +1,132 @@
-/* Global styles for Wedding Quest */
+/* Wedding Quest — Global Styles + Game Animations */
 
-/* Custom animation for countdown bar */
-@keyframes countdown {
-  from { width: 100%; }
-  to { width: 0%; }
+/* ─── Question card pop-in ─── */
+@keyframes slideInUp {
+  from { transform: translateY(32px) scale(0.97); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+.question-enter { animation: slideInUp 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+/* ─── Answer button correct bounce ─── */
+@keyframes correctPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+.correct-pop { animation: correctPop 0.4s ease both; }
+
+/* ─── Answer button wrong shake ─── */
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20%     { transform: translateX(-6px); }
+  40%     { transform: translateX(6px); }
+  60%     { transform: translateX(-4px); }
+  80%     { transform: translateX(4px); }
+}
+.wrong-shake { animation: shake 0.4s ease both; }
+
+/* ─── Score delta float up ─── */
+@keyframes floatUp {
+  0%   { transform: translateY(0);     opacity: 1; }
+  100% { transform: translateY(-48px); opacity: 0; }
+}
+.score-delta-float {
+  animation: floatUp 1.8s ease forwards;
+  pointer-events: none;
+  position: absolute;
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: #22c55e;
+  text-shadow: 0 1px 4px rgba(0,0,0,.35);
+  z-index: 50;
 }
 
-.countdown-bar {
-  animation: countdown 30s linear forwards;
+/* ─── Lucky Boost splash ─── */
+@keyframes boostIn {
+  0%   { transform: scale(0.4) rotate(-8deg); opacity: 0; }
+  60%  { transform: scale(1.1) rotate(3deg);  opacity: 1; }
+  100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
 }
+@keyframes boostOut { to { transform: scale(0.8); opacity: 0; } }
+.boost-enter { animation: boostIn  0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+.boost-exit  { animation: boostOut 0.4s ease forwards; }
 
-/* Smooth transitions for answer buttons */
-.answer-btn {
-  transition: all 0.2s ease-in-out;
+/* ─── Waiting bounce dots ─── */
+@keyframes bounceDot {
+  0%,80%,100% { transform: scale(0.3); opacity: 0.3; }
+  40%         { transform: scale(1);   opacity: 1;   }
 }
+.dot-1 { animation: bounceDot 1.2s ease-in-out 0.0s infinite; }
+.dot-2 { animation: bounceDot 1.2s ease-in-out 0.2s infinite; }
+.dot-3 { animation: bounceDot 1.2s ease-in-out 0.4s infinite; }
 
-.answer-btn:hover:not(:disabled) {
-  transform: scale(1.02);
+/* ─── Multiplier zone glow ─── */
+@keyframes zoneGlow {
+  0%,100% { opacity: 1; }
+  50%     { opacity: 0.7; }
 }
+.zone-active { animation: zoneGlow 1s ease-in-out infinite; }
 
-/* Pulse animation for waiting states */
+/* ─── Timer warning pulse ─── */
+@keyframes timerWarn {
+  0%,100% { opacity: 1; }
+  50%     { opacity: 0.4; }
+}
+.timer-warning { animation: timerWarn 0.5s ease-in-out infinite; }
+
+/* ─── Rank improved flash (display view) ─── */
+@keyframes rankUp {
+  0%   { background-color: rgba(34,197,94,.3); }
+  100% { background-color: transparent; }
+}
+.rank-improved { animation: rankUp 1s ease both; }
+
+/* ─── Score count-up flash ─── */
+@keyframes scoreFlash {
+  0%   { color: #86efac; transform: scale(1.18); }
+  100% { color: inherit;  transform: scale(1); }
+}
+.score-updated { animation: scoreFlash 0.6s ease both; }
+
+/* ─── Podium rise ─── */
+@keyframes podiumRise {
+  from { transform: translateY(50px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.podium-1 { animation: podiumRise 0.55s 0.0s cubic-bezier(0.34,1.56,0.64,1) both; }
+.podium-2 { animation: podiumRise 0.55s 0.15s cubic-bezier(0.34,1.56,0.64,1) both; }
+.podium-3 { animation: podiumRise 0.55s 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+/* ─── Celebration pulse ─── */
+@keyframes celebratePulse {
+  0%,100% { transform: scale(1);    opacity: 1; }
+  50%     { transform: scale(1.04); opacity: 0.9; }
+}
+.celebrate { animation: celebratePulse 1.5s ease-in-out infinite; }
+
+/* ─── Player card stagger enter ─── */
+@keyframes cardEnter {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.card-enter { animation: cardEnter 0.4s ease both; }
+
+/* ─── Pulse ring (waiting) ─── */
 @keyframes pulse-ring {
-  0% { transform: scale(0.95); opacity: 0.9; }
-  70% { transform: scale(1); opacity: 0.7; }
+  0%   { transform: scale(0.95); opacity: 0.9; }
+  70%  { transform: scale(1);    opacity: 0.7; }
   100% { transform: scale(0.95); opacity: 0.9; }
 }
+.pulse-ring { animation: pulse-ring 2s ease-in-out infinite; }
 
-.pulse-ring {
-  animation: pulse-ring 2s ease-in-out infinite;
-}
+/* ─── Answer buttons ─── */
+.answer-btn { transition: all 0.15s ease-in-out; }
+.answer-btn:hover:not(:disabled) { transform: scale(1.02); }
+.answer-btn:active:not(:disabled) { transform: scale(0.97); }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-::-webkit-scrollbar-thumb {
-  background: #f43f5e;
-  border-radius: 3px;
-}
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #f43f5e; border-radius: 3px; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

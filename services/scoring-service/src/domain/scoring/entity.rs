@@ -12,6 +12,8 @@ pub struct PlayerScore {
     pub rounds_played: i32,
     pub last_round_score: i32,
     pub updated_at: DateTime<Utc>,
+    /// Pending Lucky Boost multiplier for the player's next correct answer (reset to 1.0 after use).
+    pub lucky_boost_multiplier: f64,
 }
 
 impl PlayerScore {
@@ -25,6 +27,7 @@ impl PlayerScore {
             rounds_played: 0,
             last_round_score: 0,
             updated_at: Utc::now(),
+            lucky_boost_multiplier: 1.0,
         }
     }
 

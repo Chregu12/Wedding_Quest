@@ -7,6 +7,10 @@ export const routes: Routes = [
     loadChildren: () => import('./admin/admin.routes').then(m => m.adminRoutes)
   },
   {
+    path: 'display',
+    loadChildren: () => import('./display/display.routes').then(m => m.displayRoutes)
+  },
+  {
     path: '',
     loadChildren: () => import('./guest/guest.routes').then(m => m.guestRoutes)
   }

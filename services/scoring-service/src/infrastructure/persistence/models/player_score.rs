@@ -12,6 +12,7 @@ pub struct Model {
     pub rounds_played: i32,
     pub last_round_score: i32,
     pub updated_at: DateTimeWithTimeZone,
+    pub lucky_boost_multiplier: f64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

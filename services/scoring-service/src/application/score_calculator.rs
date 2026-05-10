@@ -17,12 +17,13 @@ pub struct RoundScoreResult {
 
 /// Calculate per-player scores for a single closed round.
 ///
-/// `existing_totals` maps `player_id` → current aggregate `total_score` before
-/// this round is applied.  Used to detect catch-up eligibility.
+/// - `existing_totals` — current aggregate totals before this round (for catch-up detection)
+/// - `lucky_boosts`    — pending Lucky Boost multipliers per player (applied on correct answers, then reset)
 pub fn calculate_round_scores(
     answers: &[PlayerAnswerDto],
     config: &ScoreConfigDto,
     existing_totals: &HashMap<Uuid, i32>,
+    lucky_boosts: &HashMap<Uuid, f64>,
 ) -> Vec<RoundScoreResult> {
     let base_points = config.base_points;
 
@@ -65,6 +66,17 @@ pub fn calculate_round_scores(
             if player_total < threshold {
                 result.final_points =
                     (result.final_points as f64 * config.catchup_multiplier) as i32;
+            }
+        }
+    }
+
+    // Third pass: Lucky Boost — applied only when the answer was correct.
+    for result in &mut results {
+        if result.is_correct {
+            if let Some(&boost) = lucky_boosts.get(&result.player_id) {
+                if boost > 1.0 {
+                    result.final_points = (result.final_points as f64 * boost) as i32;
+                }
             }
         }
     }
