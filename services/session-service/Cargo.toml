@@ -1,0 +1,30 @@
+[package]
+name = "session-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rf-core   = { workspace = true }
+rf-web    = { workspace = true }
+rf-orm    = { workspace = true }
+rf-config = { workspace = true }
+rf-cache  = { workspace = true, features = ["redis-backend"] }
+
+# sea-orm direkt für Entity-Definitionen (Derive-Macros brauchen `sea_orm` als Crate-Namen)
+sea-orm = { workspace = true }
+
+# Axum direkt: RouterBuilder.build() liefert axum::Router, wir brauchen axum::serve + routing-Funktionen
+axum = { version = "0.8", features = ["macros"] }
+
+tokio              = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+uuid               = { workspace = true }
+chrono             = { workspace = true }
+anyhow             = { workspace = true }
+thiserror          = "1"
+dotenvy            = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rand               = { workspace = true }
+async-trait        = { workspace = true }

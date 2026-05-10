@@ -1,0 +1,21 @@
+[package]
+name = "realtime-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rf-core      = { workspace = true }
+rf-web       = { workspace = true }
+rf-broadcast = { workspace = true }
+rf-cache     = { workspace = true, features = ["redis-backend"] }
+
+axum          = { version = "0.8", features = ["ws", "macros"] }
+tokio         = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+uuid          = { workspace = true }
+anyhow        = { workspace = true }
+dotenvy       = { workspace = true }
+tracing       = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util  = { workspace = true }
