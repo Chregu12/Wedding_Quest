@@ -24,6 +24,7 @@ pub enum NextQuestionResult {
         option_b: Option<String>,
         option_c: Option<String>,
         option_d: Option<String>,
+        correct_answer: String,
         round_number: i32,
         total_questions: i32,
     },
@@ -36,6 +37,7 @@ pub async fn handle(
     round_repo: &GameRoundRepository,
     state_repo: &GameStateRepository,
     pubsub: &RedisPubSub,
+    requested_question_id: Option<Uuid>,
 ) -> Result<NextQuestionResult, AppError> {
     let game_state = state_repo
         .find(session_code)
@@ -82,12 +84,16 @@ pub async fn handle(
     guest_quiz.sort_by_key(|q| q.order_index);
     ich_oder_du.sort_by_key(|q| q.order_index);
 
-    // next_number is 1-based
-    let idx = (next_number - 1) as usize;
-    let next_q = guest_quiz
-        .get(idx)
-        .ok_or_else(|| AppError::BadRequest("No question at that index".into()))?;
-    let paired_iod = ich_oder_du.get(idx).copied();
+    // Select question: use requested_question_id if provided, otherwise next by index
+    let next_q = if let Some(qid) = requested_question_id {
+        all_questions.iter().find(|q| q.id == qid)
+            .ok_or_else(|| AppError::NotFound("Requested question not found".into()))?
+    } else {
+        let idx = (next_number - 1) as usize;
+        guest_quiz.get(idx)
+            .ok_or_else(|| AppError::BadRequest("No question at that index".into()))?
+    };
+    let paired_iod: Option<&crate::infrastructure::session_client::QuestionDto> = None;
 
     let now = Utc::now();
     let round_id = Uuid::new_v4();
@@ -146,6 +152,7 @@ pub async fn handle(
         option_b: next_q.option_b.clone(),
         option_c: next_q.option_c.clone(),
         option_d: next_q.option_d.clone(),
+        correct_answer: next_q.correct_answer.clone(),
         round_number: next_number,
         total_questions: game_state.total_questions,
     })

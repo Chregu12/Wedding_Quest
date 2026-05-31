@@ -13,8 +13,7 @@ use crate::{
 };
 use std::sync::Arc;
 use axum::{extract::Path, http::StatusCode, Extension, Json};
-use rf_core::AppError;
-use rf_core::AppResult;
+use rf_core::{AppError, AppResult};
 
 pub async fn join_session(
     Extension(state): Extension<AppState>,
@@ -83,4 +82,29 @@ pub async fn get_lobby(
         person_b_name: lobby.person_b_name,
         players,
     }))
+}
+
+pub async fn clear_players(
+    Extension(state): Extension<AppState>,
+    Path(code): Path<String>,
+) -> Result<StatusCode, AppError> {
+    use crate::domain::game_session::{repository::GameSessionRepository, value_objects::GameCode};
+
+    let player_repo = SeaOrmPlayerRepository::new(state.db.connection().clone());
+    let session_repo = SeaOrmGameSessionRepository::new(state.db.connection().clone());
+
+    let code_vo = GameCode::from_string(code)
+        .map_err(|e| AppError::BadRequest { message: e })?;
+    let session = session_repo
+        .find_by_code(&code_vo)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?
+        .ok_or_else(|| AppError::NotFound { resource: "Session".into() })?;
+
+    player_repo
+        .delete_all_by_session(session.id)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

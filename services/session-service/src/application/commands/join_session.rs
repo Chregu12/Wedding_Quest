@@ -45,7 +45,7 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("Session not found".into()))?;
 
-        if session.status != SessionStatus::Lobby {
+        if session.status != SessionStatus::Lobby && session.status != SessionStatus::Active {
             return Err(AppError::Domain(DomainError::SessionNotInLobby));
         }
 

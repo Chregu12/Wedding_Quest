@@ -43,6 +43,17 @@ pub async fn handle(
 
     let has_ich_oder_du = round.ich_oder_du_text.is_some();
 
+    // For ich_oder_du questions: correct_answer is determined by couple agreement
+    let is_ich_oder_du = round.question_type == "ich_oder_du";
+    if is_ich_oder_du {
+        // Override correct_answer based on couple's answer
+        let effective_correct = match &round.couple_answer {
+            Some(ca) if ca != "uneinig" => ca.clone(),
+            _ => String::new(), // No correct answer if couple disagrees or hasn't answered
+        };
+        round.correct_answer = effective_correct.clone();
+    }
+
     if has_ich_oder_du {
         // Move to ich_oder_du phase
         round.status = RoundStatus::IchOderDu;
@@ -77,26 +88,27 @@ pub async fn handle(
             ich_oder_du_text: round.ich_oder_du_text,
         })
     } else {
-        // No ich-oder-du: move directly to scored
+        // No paired ich-oder-du: move directly to scored
         round.status = RoundStatus::Scored;
         round_repo.update(&round).await?;
 
         let updated_state = GameState {
-            status: GameStatus::Question, // stays at question until next-question advances it
+            status: GameStatus::Question,
             updated_at: now,
             ..game_state
         };
         state_repo.upsert(&updated_state).await?;
 
+        let effective_answer = round.correct_answer.clone();
         let event = GameEvent::RoundClosed {
             round_id,
-            correct_answer: round.correct_answer.clone(),
+            correct_answer: effective_answer.clone(),
             closed_at: now,
         };
         publish_to_both(pubsub, session_code, &event).await?;
 
         Ok(CloseRoundResult {
-            correct_answer: round.correct_answer,
+            correct_answer: effective_answer,
             has_ich_oder_du: false,
             ich_oder_du_text: None,
         })

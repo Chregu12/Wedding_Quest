@@ -112,11 +112,12 @@ pub async fn run(
         };
 
         match serde_json::from_str::<GameEvent>(&msg.payload) {
-            Ok(GameEvent::RoundClosed { round_id, .. }) => {
+            Ok(GameEvent::RoundClosed { round_id, correct_answer, .. }) => {
                 tracing::debug!("RoundClosed for session={session_code} round={round_id}");
                 if let Err(e) = handle_round_closed(
                     &session_code,
                     round_id,
+                    &correct_answer,
                     &db,
                     &engine_client,
                     &session_client,
@@ -155,18 +156,34 @@ pub async fn run(
 async fn handle_round_closed(
     session_code: &str,
     round_id: Uuid,
+    event_correct_answer: &str,
     db: &Arc<DatabaseManager>,
     engine_client: &Arc<EngineClient>,
     session_client: &Arc<SessionClient>,
     pub_pubsub: &Arc<RedisPubSub>,
 ) -> anyhow::Result<()> {
-    let answers = engine_client
+    let mut answers = engine_client
         .get_round_answers(session_code, round_id)
         .await?;
 
     if answers.is_empty() {
         tracing::info!("No answers for round {round_id}, skipping score calculation");
         return Ok(());
+    }
+
+    // For ich_oder_du: recalculate is_correct based on the event's correct_answer
+    // (which is set by close_round based on couple agreement)
+    let is_ich_oder_du = answers.first().map(|a| a.question_type == "ich_oder_du").unwrap_or(false);
+    if is_ich_oder_du {
+        for answer in &mut answers {
+            if event_correct_answer.is_empty() {
+                // Couple disagreed - nobody gets points
+                answer.is_correct = false;
+            } else {
+                // Couple agreed - check if guest picked the same
+                answer.is_correct = answer.answer.to_lowercase() == event_correct_answer.to_lowercase();
+            }
+        }
     }
 
     let config = session_client.get_score_config(session_code).await?;
@@ -224,15 +241,31 @@ async fn handle_round_closed(
     // Reload leaderboard and publish ScoresUpdated.
     let leaderboard = repo.find_by_session(session_code).await?;
 
+    // Assign ranks with ties: same score = same rank
     let score_entries: Vec<PlayerScoreEntry> = leaderboard
         .iter()
         .enumerate()
-        .map(|(i, ps)| PlayerScoreEntry {
-            player_id: ps.player_id,
-            player_name: ps.player_name.clone(),
-            total_score: ps.total_score,
-            last_round_score: ps.last_round_score,
-            rank: i + 1,
+        .map(|(i, ps)| {
+            let rank = if i == 0 {
+                1
+            } else if ps.total_score == leaderboard[i - 1].total_score {
+                // Same score as previous → same rank
+                // Find the rank of the first player with this score
+                let mut r = i + 1;
+                for j in (0..i).rev() {
+                    if leaderboard[j].total_score == ps.total_score { r = j + 1; } else { break; }
+                }
+                r
+            } else {
+                i + 1
+            };
+            PlayerScoreEntry {
+                player_id: ps.player_id,
+                player_name: ps.player_name.clone(),
+                total_score: ps.total_score,
+                last_round_score: ps.last_round_score,
+                rank,
+            }
         })
         .collect();
 
@@ -252,33 +285,86 @@ async fn handle_round_closed(
         leaderboard.len()
     );
 
-    // Assign a Lucky Boost to the last-place player (if ≥ 2 players).
-    if leaderboard.len() >= 2 {
-        if let Some(last_place) = leaderboard.last() {
-            let boosts = [1.5f64, 2.0, 3.0];
-            let multiplier = *boosts.choose(&mut rand::thread_rng()).unwrap_or(&1.5);
+    // Assign a Lucky Boost to the last-place GUEST player (if ≥ 2 players).
+    // Skip Lucky Boost for ich_oder_du rounds and exclude couple members.
+    // Couple members are identified by time_taken_seconds == 0 in their answers.
+    let couple_player_ids: std::collections::HashSet<Uuid> = answers.iter()
+        .filter(|a| a.time_taken_seconds == 0.0)
+        .map(|a| a.player_id)
+        .collect();
 
-            if let Err(e) = repo
-                .set_lucky_boost(session_code, last_place.player_id, multiplier)
-                .await
-            {
-                tracing::warn!("Failed to set Lucky Boost: {e}");
+    // Find minimum couple score (to compare against guests)
+    let min_couple_score = leaderboard.iter()
+        .filter(|ps| couple_player_ids.contains(&ps.player_id))
+        .map(|ps| ps.total_score)
+        .min()
+        .unwrap_or(i32::MAX);
+
+    if !is_ich_oder_du && leaderboard.len() >= 2 {
+        // Find the actual last-place player (lowest score).
+        // Rules:
+        // - Any player (guest or couple member) with the lowest score gets lucky boost
+        // - All equal → no lucky boost
+        let max_score = leaderboard.first().map(|ps| ps.total_score).unwrap_or(0);
+        let min_score = leaderboard.last().map(|ps| ps.total_score).unwrap_or(0);
+
+        // Only assign if exactly ONE player is in last place (alone)
+        let last_place = if max_score > min_score {
+            // Count how many players share the lowest score
+            let last_count = leaderboard.iter().filter(|ps| ps.total_score == min_score).count();
+            if last_count == 1 {
+                leaderboard.last()
             } else {
-                let boost_event = LuckyBoostEvent {
-                    event_type: "LuckyBoost",
-                    session_code,
-                    player_id: last_place.player_id,
-                    player_name: last_place.player_name.clone(),
-                    multiplier,
-                };
-                pub_pubsub
-                    .publish(&channel, &serde_json::to_string(&boost_event)?)
-                    .await?;
+                None // Multiple players tied at last place → no boost
+            }
+        } else {
+            None
+        };
 
-                tracing::info!(
-                    "LuckyBoost x{multiplier} assigned to {} in session={session_code}",
-                    last_place.player_name
-                );
+        if let Some(last_place) = last_place {
+                // Calculate dynamic multiplier:
+                // Target: after boost, player lands in the middle but never exceeds leader
+                let base_points = 100i32;
+                let gap_to_leader = (max_score - last_place.total_score).max(0) as f64;
+
+                // Target: land about 40-70% of the way to the leader (middle of pack)
+                let target_extra = gap_to_leader * (0.4 + rand::random::<f64>() * 0.3);
+
+                // Convert to multiplier: (base + extra) / base
+                // e.g. gap=300, target_extra=180 → multiplier = (100+180)/100 = 2.8
+                let capped_boost_points = target_extra.min(gap_to_leader - (base_points as f64 * 0.3));
+
+                // Convert to multiplier (applied to base_points of next correct answer)
+                let multiplier = if base_points > 0 && capped_boost_points > 0.0 {
+                    ((capped_boost_points + base_points as f64) / base_points as f64).max(1.5).min(5.0)
+                } else {
+                    1.5
+                };
+                // Round to 1 decimal
+                let multiplier = (multiplier * 10.0).round() / 10.0;
+
+                if let Err(e) = repo
+                    .set_lucky_boost(session_code, last_place.player_id, multiplier)
+                    .await
+                {
+                    tracing::warn!("Failed to set Lucky Boost: {e}");
+                } else {
+                    let boost_event = LuckyBoostEvent {
+                        event_type: "LuckyBoost",
+                        session_code,
+                        player_id: last_place.player_id,
+                        player_name: last_place.player_name.clone(),
+                        multiplier,
+                    };
+                    pub_pubsub
+                        .publish(&channel, &serde_json::to_string(&boost_event)?)
+                        .await?;
+
+                    tracing::info!(
+                        "LuckyBoost x{multiplier} assigned to {} in session={session_code}",
+                        last_place.player_name
+                    );
+                }
             }
         }
     }

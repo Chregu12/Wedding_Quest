@@ -30,6 +30,8 @@ pub enum GameEvent {
     CoupleAnswered {
         round_id: Uuid,
         couple_answer: String,
+        answer_a: String,
+        answer_b: String,
     },
     GameEnded {
         session_code: String,

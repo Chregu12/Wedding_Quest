@@ -11,4 +11,9 @@ export const guestRoutes: Routes = [
     loadComponent: () =>
       import('./game/game.component').then(m => m.GuestGameComponent)
   },
+  {
+    path: 'couple/:code',
+    loadComponent: () =>
+      import('./couple/couple.component').then(m => m.CoupleGameComponent)
+  },
 ];

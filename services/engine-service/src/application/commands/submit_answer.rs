@@ -15,6 +15,7 @@ pub struct SubmitAnswerCommand {
     pub player_id: Uuid,
     pub player_name: String,
     pub answer: String,
+    pub couple: bool,
 }
 
 pub struct SubmitAnswerResult {
@@ -51,9 +52,20 @@ pub async fn handle(
         });
     }
 
-    let is_correct = round.correct_answer.to_uppercase() == cmd.answer.to_uppercase();
+    // For ich_oder_du: is_correct is always false at submit time.
+    // The real correctness is determined after couple answers (in close_round).
+    let is_correct = if round.question_type == "ich_oder_du" {
+        false
+    } else {
+        round.correct_answer.to_uppercase() == cmd.answer.to_uppercase()
+    };
     let now = Utc::now();
-    let time_taken = (now - round.started_at).num_seconds().max(0) as f64;
+    // Couple always gets full points (time_taken = 0 → max multiplier)
+    let time_taken = if cmd.couple {
+        0.0
+    } else {
+        (now - round.started_at).num_seconds().max(0) as f64
+    };
 
     // Upsert: if player already answered, ignore (unique index enforces once per round)
     let answer_model = PlayerAnswerActiveModel {

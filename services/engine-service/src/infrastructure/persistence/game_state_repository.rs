@@ -1,12 +1,12 @@
 use chrono::DateTime;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait,
+    ActiveValue::Set, DatabaseConnection, EntityTrait, sea_query::OnConflict, ActiveModelTrait,
 };
 
 use crate::domain::game::entity::{GameState, GameStatus};
 use crate::errors::AppError;
 
-use super::models::game_state::{ActiveModel, Entity};
+use super::models::game_state::{ActiveModel, Column, Entity};
 
 pub struct GameStateRepository {
     db: DatabaseConnection,
@@ -26,7 +26,20 @@ impl GameStateRepository {
             total_questions: Set(state.total_questions),
             updated_at: Set(state.updated_at.fixed_offset()),
         };
-        model.save(&self.db).await?;
+        Entity::insert(model)
+            .on_conflict(
+                OnConflict::column(Column::SessionCode)
+                    .update_columns([
+                        Column::Status,
+                        Column::CurrentRoundId,
+                        Column::CurrentRoundNumber,
+                        Column::TotalQuestions,
+                        Column::UpdatedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&self.db)
+            .await?;
         Ok(())
     }
 

@@ -8,7 +8,7 @@ use super::ws_handler;
 pub fn routes(registry: Arc<RoomRegistry>) -> axum::Router {
     RouterBuilder::new()
         .route("/health", get(health_check))
-        .route("/ws/:session_id", get(ws_handler::ws_upgrade))
+        .route("/ws/{session_id}", get(ws_handler::ws_upgrade))
         .with_tracing(true)
         .with_cors(true)
         .build()

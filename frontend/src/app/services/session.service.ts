@@ -10,11 +10,15 @@ import {
   PlayersResponse
 } from '../models/session.model';
 
-const SESSION_API = 'http://localhost:3002';
+const SESSION_API = `http://${window.location.hostname}:3002`;
 
 @Injectable({ providedIn: 'root' })
 export class SessionService {
   private http = inject(HttpClient);
+
+  list(): Observable<Session[]> {
+    return this.http.get<Session[]>(`${SESSION_API}/sessions`);
+  }
 
   create(request: CreateSessionRequest): Observable<CreateSessionResponse> {
     return this.http.post<CreateSessionResponse>(`${SESSION_API}/sessions`, request);
@@ -34,5 +38,13 @@ export class SessionService {
 
   getPlayers(code: string): Observable<PlayersResponse> {
     return this.http.get<PlayersResponse>(`${SESSION_API}/sessions/${code}/players`);
+  }
+
+  clearPlayers(code: string): Observable<void> {
+    return this.http.delete<void>(`${SESSION_API}/sessions/${code}/players`);
+  }
+
+  updateSession(code: string, data: { person_a_name: string; person_b_name: string; host_name: string }): Observable<void> {
+    return this.http.put<void>(`${SESSION_API}/sessions/${code}`, data);
   }
 }

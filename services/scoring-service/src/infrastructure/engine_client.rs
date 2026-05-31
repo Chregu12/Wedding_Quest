@@ -44,4 +44,6 @@ pub struct PlayerAnswerDto {
     pub answer: String,
     pub is_correct: bool,
     pub time_taken_seconds: f64,
+    #[serde(default)]
+    pub question_type: String,
 }

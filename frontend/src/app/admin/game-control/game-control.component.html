@@ -12,6 +12,12 @@
         {{ code() }}
       </span>
       <button
+        (click)="endGame()"
+        class="text-sm text-red-600 hover:text-white hover:bg-red-600 px-3 py-1.5 rounded-lg border border-red-300 transition-colors"
+      >
+        Spiel beenden
+      </button>
+      <button
         (click)="goToSetup()"
         class="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
       >
@@ -44,7 +50,7 @@
       }
 
       <!-- Active Question -->
-      @if ((phase() === 'question' || phase() === 'round-closed') && currentRound()) {
+      @if ((phase() === 'question-ready' || phase() === 'question' || phase() === 'waiting-couple' || phase() === 'couple-done' || phase() === 'round-closed') && currentRound()) {
         <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <!-- Question Header -->
           <div class="bg-gradient-to-r from-rose-500 to-pink-500 px-6 py-4">
@@ -56,9 +62,17 @@
                 <span class="bg-white/20 text-white text-xs px-3 py-1 rounded-full font-medium">
                   Runde beendet
                 </span>
+              } @else if (phase() === 'waiting-couple') {
+                <span class="bg-yellow-400/30 text-yellow-100 text-xs px-3 py-1 rounded-full font-medium animate-pulse">
+                  Warte auf Brautpaar...
+                </span>
+              } @else if (phase() === 'couple-done') {
+                <span class="bg-green-400/30 text-green-100 text-xs px-3 py-1 rounded-full font-medium">
+                  Brautpaar fertig ✓
+                </span>
               } @else {
-                <span class="bg-white/20 text-white text-xs px-3 py-1 rounded-full font-medium animate-pulse">
-                  Aktiv
+                <span class="bg-white/20 text-white text-sm px-3 py-1 rounded-full font-bold">
+                  {{ countdown() }}s
                 </span>
               }
             </div>
@@ -70,29 +84,60 @@
             </h2>
 
             <!-- Options Grid -->
-            <div class="grid grid-cols-2 gap-3 mb-6">
-              @for (option of ['A', 'B', 'C', 'D']; track option) {
-                <div [class]="'border-2 rounded-xl p-4 transition-all duration-300 ' + getOptionClass(option)">
-                  <div class="flex items-center gap-3">
-                    <span class="font-bold text-lg w-7 h-7 flex items-center justify-center rounded-full bg-white/60 text-sm">
-                      {{ option }}
-                    </span>
-                    <span class="text-sm font-medium">
-                      @if (option === 'A') { {{ currentRound()!.option_a }} }
-                      @if (option === 'B') { {{ currentRound()!.option_b }} }
-                      @if (option === 'C') { {{ currentRound()!.option_c }} }
-                      @if (option === 'D') { {{ currentRound()!.option_d }} }
-                    </span>
-                    @if (isCorrectOption(option)) {
-                      <span class="ml-auto text-green-600 font-bold">✓</span>
-                    }
-                  </div>
+            @if (currentQuestionType() === 'ich_oder_du') {
+              <!-- Ich oder Du: 2 options -->
+              <div class="grid grid-cols-2 gap-4 mb-6">
+                <div [class]="'border-2 rounded-xl p-6 text-center transition-all duration-300 ' +
+                  (phase() === 'round-closed' && closedRound()?.correct_answer === 'ich' ? 'bg-green-100 border-green-400 ring-2 ring-green-400' :
+                   'bg-rose-50 border-rose-200')">
+                  <span class="text-2xl font-black text-rose-700">{{ personAName() }}</span>
+                  @if (phase() === 'round-closed' && closedRound()?.correct_answer === 'ich') {
+                    <span class="ml-2 text-green-600 font-bold">✓</span>
+                  }
                 </div>
-              }
-            </div>
+                <div [class]="'border-2 rounded-xl p-6 text-center transition-all duration-300 ' +
+                  (phase() === 'round-closed' && closedRound()?.correct_answer === 'du' ? 'bg-green-100 border-green-400 ring-2 ring-green-400' :
+                   'bg-purple-50 border-purple-200')">
+                  <span class="text-2xl font-black text-purple-700">{{ personBName() }}</span>
+                  @if (phase() === 'round-closed' && closedRound()?.correct_answer === 'du') {
+                    <span class="ml-2 text-green-600 font-bold">✓</span>
+                  }
+                </div>
+              </div>
+            } @else {
+              <!-- Quiz: 4 options -->
+              <div class="grid grid-cols-2 gap-3 mb-6">
+                @for (option of ['A', 'B', 'C', 'D']; track option) {
+                  <div [class]="'border-2 rounded-xl p-4 transition-all duration-300 ' + getOptionClass(option)">
+                    <div class="flex items-center gap-3">
+                      <span class="font-bold text-lg w-7 h-7 flex items-center justify-center rounded-full bg-white/60 text-sm">
+                        {{ option }}
+                      </span>
+                      <span class="text-sm font-medium">
+                        @if (option === 'A') { {{ currentRound()!.option_a }} }
+                        @if (option === 'B') { {{ currentRound()!.option_b }} }
+                        @if (option === 'C') { {{ currentRound()!.option_c }} }
+                        @if (option === 'D') { {{ currentRound()!.option_d }} }
+                      </span>
+                      @if (isCorrectOption(option)) {
+                        <span class="ml-auto text-green-600 font-bold">✓</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
 
             <!-- Action Buttons -->
             <div class="flex gap-3">
+              @if (phase() === 'question-ready') {
+                <button
+                  (click)="startTimer()"
+                  class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-full transition-colors"
+                >
+                  Timer starten ▶
+                </button>
+              }
               @if (phase() === 'question') {
                 <button
                   (click)="closeRound()"
@@ -102,9 +147,27 @@
                   Runde beenden 🔒
                 </button>
               }
+              @if (phase() === 'waiting-couple') {
+                <button
+                  (click)="closeRound()"
+                  [disabled]="loading()"
+                  class="flex-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-semibold py-3 px-6 rounded-full transition-colors"
+                >
+                  Auflösen (ohne Brautpaar)
+                </button>
+              }
+              @if (phase() === 'couple-done') {
+                <button
+                  (click)="closeRound()"
+                  [disabled]="loading()"
+                  class="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-semibold py-3 px-6 rounded-full transition-colors"
+                >
+                  Auflösen ✓
+                </button>
+              }
               @if (phase() === 'round-closed') {
                 <button
-                  (click)="nextQuestion()"
+                  (click)="showNextTopicChoice()"
                   [disabled]="loading()"
                   class="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-semibold py-3 px-6 rounded-full transition-colors"
                 >
@@ -114,38 +177,83 @@
             </div>
           </div>
         </div>
+
+        <!-- Brautpaar-Antworten (nur bei Ich-oder-Du) -->
+        @if ((phase() === 'couple-done' || phase() === 'round-closed') && coupleAnswerA() && currentQuestionType() === 'ich_oder_du') {
+          <div class="bg-white rounded-2xl shadow-lg p-6 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-3">💍 Brautpaar-Antworten</h3>
+            <div class="grid grid-cols-2 gap-4">
+              <div [class]="'rounded-xl p-4 text-center border-2 ' + (coupleAgree() ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300')">
+                <p class="text-sm text-gray-500 mb-1">{{ personAName() }}</p>
+                <p class="text-xl font-black">{{ coupleAnswerA() === 'ich' ? personAName() : coupleAnswerA() === 'du' ? personBName() : coupleAnswerA() }}</p>
+              </div>
+              <div [class]="'rounded-xl p-4 text-center border-2 ' + (coupleAgree() ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300')">
+                <p class="text-sm text-gray-500 mb-1">{{ personBName() }}</p>
+                <p class="text-xl font-black">{{ coupleAnswerB() === 'ich' ? personAName() : coupleAnswerB() === 'du' ? personBName() : coupleAnswerB() }}</p>
+              </div>
+            </div>
+            @if (!coupleAgree()) {
+              <p class="text-center text-red-600 font-medium mt-3">Uneinig! Keine Punkte für die Gäste.</p>
+            } @else {
+              <p class="text-center text-green-600 font-medium mt-3">Einig! Gäste mit richtigem Tipp erhalten Punkte.</p>
+            }
+          </div>
+        }
+
+        <!-- Zwischenstand nach Rundenende -->
+        @if (phase() === 'round-closed' && scores().length > 0) {
+          <div class="bg-white rounded-2xl shadow-lg p-6 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span>🏆</span> Zwischenstand nach Runde {{ currentRound()!.round_number }}
+            </h3>
+            <div class="divide-y divide-gray-100">
+              @for (player of scores(); track player.player_id; let i = $index) {
+                <div class="flex items-center gap-3 py-3">
+                  <span class="font-bold text-xl w-10 text-center"
+                    [class]="i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-gray-300'">
+                    @if (i === 0) { 🥇 }
+                    @else if (i === 1) { 🥈 }
+                    @else if (i === 2) { 🥉 }
+                    @else { {{ i + 1 }} }
+                  </span>
+                  <div class="flex-1">
+                    <p class="font-semibold text-gray-800">{{ player.player_name }}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="font-bold text-rose-600 text-lg">{{ player.total_score }} Pkt</p>
+                    @if (player.last_round_score > 0) {
+                      <p class="text-xs text-green-500 font-medium">+{{ player.last_round_score }}</p>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
       }
 
-      <!-- Ich oder Du Phase -->
-      @if (phase() === 'ich-oder-du' && closedRound()) {
+      <!-- Topic Choice Phase -->
+      @if (phase() === 'topic-choice' && currentTopicPair()) {
         <div class="bg-white rounded-2xl shadow-lg p-6">
           <div class="text-center mb-6">
-            <div class="text-4xl mb-3">💑</div>
-            <h2 class="text-2xl font-bold text-gray-800">Ich oder Du?</h2>
-            @if (closedRound()!.ich_oder_du_text) {
-              <p class="text-gray-600 mt-2 text-lg">{{ closedRound()!.ich_oder_du_text }}</p>
-            }
+            <div class="text-4xl mb-3">🎯</div>
+            <h2 class="text-2xl font-bold text-gray-800">Thema wählen</h2>
+            <p class="text-gray-500 text-sm mt-1">Das Brautpaar wählt ein Thema für die nächste Runde</p>
           </div>
 
           <div class="grid grid-cols-2 gap-4">
             <button
-              (click)="submitCoupleAnswer('ich')"
-              [disabled]="loading()"
-              class="py-8 text-2xl font-bold bg-rose-100 hover:bg-rose-200 disabled:bg-rose-50 text-rose-700 rounded-2xl border-2 border-rose-300 transition-colors"
+              (click)="selectTopic('A')"
+              class="py-10 text-2xl font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-2xl border-2 border-rose-200 hover:border-rose-400 transition-all"
             >
-              💁 Ich
+              {{ currentTopicPair()!.topicA }}
             </button>
             <button
-              (click)="submitCoupleAnswer('du')"
-              [disabled]="loading()"
-              class="py-8 text-2xl font-bold bg-purple-100 hover:bg-purple-200 disabled:bg-purple-50 text-purple-700 rounded-2xl border-2 border-purple-300 transition-colors"
+              (click)="selectTopic('B')"
+              class="py-10 text-2xl font-bold bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-2xl border-2 border-purple-200 hover:border-purple-400 transition-all"
             >
-              Du 💁
+              {{ currentTopicPair()!.topicB }}
             </button>
-          </div>
-
-          <div class="mt-4 text-center">
-            <p class="text-sm text-gray-400">Richtige Antwort der letzten Runde war: <strong>{{ closedRound()!.correct_answer }}</strong></p>
           </div>
         </div>
       }
@@ -157,7 +265,7 @@
           <h2 class="text-xl font-bold text-gray-800 mb-2">Antwort des Paares eingereicht!</h2>
           <p class="text-gray-500 mb-6">Die Gäste sehen jetzt die Auflösung.</p>
           <button
-            (click)="nextQuestion()"
+            (click)="showNextTopicChoice()"
             [disabled]="loading()"
             class="bg-rose-500 hover:bg-rose-600 disabled:bg-rose-300 text-white font-semibold py-3 px-8 rounded-full transition-colors"
           >

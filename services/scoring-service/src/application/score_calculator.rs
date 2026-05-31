@@ -27,20 +27,14 @@ pub fn calculate_round_scores(
 ) -> Vec<RoundScoreResult> {
     let base_points = config.base_points;
 
-    // First pass: raw time-multiplied score.
+    // First pass: flat scoring (no time multiplier).
     let mut results: Vec<RoundScoreResult> = answers
         .iter()
         .map(|a| {
-            let time_multiplier = if a.time_taken_seconds <= config.tier1_max_seconds as f64 {
-                config.tier1_multiplier
-            } else if a.time_taken_seconds <= config.tier2_max_seconds as f64 {
-                config.tier2_multiplier
-            } else {
-                config.tier3_multiplier
-            };
+            let time_multiplier = 1.0;
 
             let raw_score = if a.is_correct {
-                (base_points as f64 * time_multiplier) as i32
+                base_points
             } else {
                 0
             };
@@ -56,26 +50,17 @@ pub fn calculate_round_scores(
         })
         .collect();
 
-    // Second pass: catch-up bonus.
-    let max_total = existing_totals.values().copied().max().unwrap_or(0);
-    if max_total > 0 {
-        let threshold =
-            (max_total as f64 * config.catchup_threshold_percent as f64 / 100.0) as i32;
-        for result in &mut results {
-            let player_total = existing_totals.get(&result.player_id).copied().unwrap_or(0);
-            if player_total < threshold {
-                result.final_points =
-                    (result.final_points as f64 * config.catchup_multiplier) as i32;
-            }
-        }
-    }
+    // Check if this is an ich_oder_du round (all answers have same type)
+    let is_ich_oder_du = answers.first().map(|a| a.question_type == "ich_oder_du").unwrap_or(false);
 
-    // Third pass: Lucky Boost — applied only when the answer was correct.
-    for result in &mut results {
-        if result.is_correct {
-            if let Some(&boost) = lucky_boosts.get(&result.player_id) {
-                if boost > 1.0 {
-                    result.final_points = (result.final_points as f64 * boost) as i32;
+    // Lucky Boost (not for ich_oder_du).
+    if !is_ich_oder_du {
+        for result in &mut results {
+            if result.is_correct {
+                if let Some(&boost) = lucky_boosts.get(&result.player_id) {
+                    if boost > 1.0 {
+                        result.final_points = (result.final_points as f64 * boost) as i32;
+                    }
                 }
             }
         }

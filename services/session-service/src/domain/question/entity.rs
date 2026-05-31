@@ -16,6 +16,8 @@ pub struct Question {
     pub correct_answer: String, // "A"|"B"|"C"|"D" for guest_quiz, "ich"|"du" for ich_oder_du
     pub order_index: i32,
     pub points: i32,
+    pub category: Option<String>,
+    pub pair_index: Option<i32>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -43,6 +45,8 @@ impl Question {
             correct_answer: correct_answer.to_string(),
             order_index,
             points,
+            category: None,
+            pair_index: None,
             created_at: Utc::now(),
         }
     }
@@ -52,6 +56,8 @@ impl Question {
         text: String,
         correct_answer: CoupleAnswer,
         order_index: i32,
+        category: Option<String>,
+        pair_index: Option<i32>,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -65,6 +71,8 @@ impl Question {
             correct_answer: correct_answer.to_string(),
             order_index,
             points: 0,
+            category,
+            pair_index,
             created_at: Utc::now(),
         }
     }

@@ -27,13 +27,26 @@ pub async fn get_leaderboard(
     let player_scores: Vec<PlayerScoreResponse> = scores
         .iter()
         .enumerate()
-        .map(|(i, ps)| PlayerScoreResponse {
-            player_id: ps.player_id,
-            player_name: ps.player_name.clone(),
-            total_score: ps.total_score,
-            rounds_played: ps.rounds_played,
-            last_round_score: ps.last_round_score,
-            rank: i + 1,
+        .map(|(i, ps)| {
+            let rank = if i == 0 {
+                1
+            } else if ps.total_score == scores[i - 1].total_score {
+                let mut r = i + 1;
+                for j in (0..i).rev() {
+                    if scores[j].total_score == ps.total_score { r = j + 1; } else { break; }
+                }
+                r
+            } else {
+                i + 1
+            };
+            PlayerScoreResponse {
+                player_id: ps.player_id,
+                player_name: ps.player_name.clone(),
+                total_score: ps.total_score,
+                rounds_played: ps.rounds_played,
+                last_round_score: ps.last_round_score,
+                rank,
+            }
         })
         .collect();
 
@@ -41,6 +54,20 @@ pub async fn get_leaderboard(
         session_code: code,
         scores: player_scores,
     }))
+}
+
+/// DELETE /scores/:code
+///
+/// Resets all scores for a session (used when restarting a game).
+pub async fn reset_scores(
+    Extension(state): Extension<AppState>,
+    Path(code): Path<String>,
+) -> AppResult<()> {
+    let repo = ScoreRepository::new(state.db.connection().clone());
+    repo.delete_by_session(&code)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?;
+    Ok(())
 }
 
 /// GET /scores/:code/config

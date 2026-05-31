@@ -48,7 +48,9 @@ pub async fn handle(
 
     let event = GameEvent::CoupleAnswered {
         round_id,
-        couple_answer: answer,
+        couple_answer: answer.clone(),
+        answer_a: answer.clone(),
+        answer_b: answer,
     };
     publish_to_both(pubsub, session_code, &event).await?;
 

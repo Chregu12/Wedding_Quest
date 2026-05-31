@@ -21,6 +21,7 @@ pub struct StartGameResult {
     pub option_b: Option<String>,
     pub option_c: Option<String>,
     pub option_d: Option<String>,
+    pub correct_answer: String,
     pub round_number: i32,
     pub total_questions: i32,
 }
@@ -31,6 +32,7 @@ pub async fn handle(
     round_repo: &GameRoundRepository,
     state_repo: &GameStateRepository,
     pubsub: &RedisPubSub,
+    requested_question_id: Option<Uuid>,
 ) -> Result<StartGameResult, AppError> {
     // Fetch all questions from session-service
     let all_questions = session_client
@@ -51,17 +53,24 @@ pub async fn handle(
     guest_quiz.sort_by_key(|q| q.order_index);
     ich_oder_du.sort_by_key(|q| q.order_index);
 
-    if guest_quiz.is_empty() {
+    if guest_quiz.is_empty() && all_questions.is_empty() {
         return Err(AppError::BadRequest(
-            "No guest_quiz questions found for this session".into(),
+            "No questions found for this session".into(),
         ));
     }
 
-    let total_questions = guest_quiz.len() as i32;
+    // Each pair has 2 questions, only 1 is played per round
+    let total_questions = (all_questions.len() as i32) / 2;
 
-    // Build first round — pair index 0 with ich_oder_du index 0 (if available)
-    let first_q = guest_quiz[0];
-    let paired_iod = ich_oder_du.get(0).copied();
+    // Select question: use requested_question_id if provided, otherwise first guest_quiz
+    let first_q = if let Some(qid) = requested_question_id {
+        all_questions.iter().find(|q| q.id == qid)
+            .ok_or_else(|| AppError::NotFound("Requested question not found".into()))?
+    } else {
+        guest_quiz.first()
+            .ok_or_else(|| AppError::BadRequest("No questions available".into()))?
+    };
+    let paired_iod: Option<&crate::infrastructure::session_client::QuestionDto> = None;
 
     let now = Utc::now();
     let round_id = Uuid::new_v4();
@@ -123,6 +132,7 @@ pub async fn handle(
         option_b: first_q.option_b.clone(),
         option_c: first_q.option_c.clone(),
         option_d: first_q.option_d.clone(),
+        correct_answer: first_q.correct_answer.clone(),
         round_number: 1,
         total_questions,
     })

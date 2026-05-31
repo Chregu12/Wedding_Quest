@@ -19,6 +19,8 @@ pub struct AddIchOderDuRequest {
     pub text: String,
     pub correct_answer: String, // "ich"|"du"
     pub order_index: Option<i32>,
+    pub category: Option<String>,
+    pub pair_index: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,7 +35,23 @@ pub struct QuestionResponse {
     pub correct_answer: String,
     pub order_index: i32,
     pub points: i32,
+    pub category: Option<String>,
+    pub pair_index: Option<i32>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateQuestionRequest {
+    pub text: Option<String>,
+    pub option_a: Option<String>,
+    pub option_b: Option<String>,
+    pub option_c: Option<String>,
+    pub option_d: Option<String>,
+    pub correct_answer: Option<String>,
+    pub order_index: Option<i32>,
+    pub points: Option<i32>,
+    pub category: Option<String>,
+    pub pair_index: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]

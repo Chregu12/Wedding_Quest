@@ -1,13 +1,15 @@
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { SessionService } from '../../services/session.service';
 import { QuestionService } from '../../services/question.service';
-import { Session } from '../../models/session.model';
+import { QrBroadcastService } from '../../services/qr-broadcast.service';
+import { Session, PlayerInfo } from '../../models/session.model';
 import { Question, AddGuestQuizRequest, AddIchOderDuRequest } from '../../models/question.model';
 import { ScoreConfig } from '../../models/score.model';
 import { QRCodeModule } from 'angularx-qrcode';
+import { Subscription, interval, switchMap } from 'rxjs';
 
 type TabType = 'quiz' | 'ich-oder-du' | 'settings';
 
@@ -17,24 +19,32 @@ type TabType = 'quiz' | 'ich-oder-du' | 'settings';
   imports: [CommonModule, FormsModule, QRCodeModule, RouterLink],
   templateUrl: './session-detail.component.html',
 })
-export class SessionDetailComponent implements OnInit {
+export class SessionDetailComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private sessionService = inject(SessionService);
   private questionService = inject(QuestionService);
+  private qrBroadcast = inject(QrBroadcastService);
 
   code = signal('');
   session = signal<Session | null>(null);
+  editingSession = signal<{ person_a_name: string; person_b_name: string; host_name: string } | null>(null);
   questions = signal<Question[]>([]);
+  players = signal<PlayerInfo[]>([]);
   activeTab = signal<TabType>('quiz');
   loading = signal(false);
   error = signal<string | null>(null);
   successMessage = signal<string | null>(null);
   starting = signal(false);
+  editingQuestion = signal<Question | null>(null);
+  qrModalType = signal<'guest' | 'couple' | null>(null);
+  private playerPollSub?: Subscription;
 
-  // QR Codes
-  qrData = computed(() => `http://localhost:4200/join?code=${this.code()}`);
-  displayUrl = computed(() => `http://localhost:4200/display/${this.code()}`);
+  // QR Codes & URLs
+  qrData = computed(() => `http://${window.location.host}/join?code=${this.code()}`);
+  displayUrl = computed(() => `http://${window.location.host}/display/${this.code()}`);
+  coupleUrlA = computed(() => `http://${window.location.host}/couple/${this.code()}?name=${this.session()?.person_a_name ?? ''}`);
+  coupleUrlB = computed(() => `http://${window.location.host}/couple/${this.code()}?name=${this.session()?.person_b_name ?? ''}`);
 
   // Guest Quiz form
   quizForm = signal<AddGuestQuizRequest>({
@@ -52,6 +62,8 @@ export class SessionDetailComponent implements OnInit {
   ichOderDuForm = signal<AddIchOderDuRequest>({
     text: '',
     correct_answer: 'ich',
+    category: '',
+    pair_index: undefined,
   });
   addingIchOderDu = signal(false);
 
@@ -72,11 +84,91 @@ export class SessionDetailComponent implements OnInit {
   ichOderDuQuestions = computed(() =>
     this.questions().filter(q => q.question_type === 'ich_oder_du')
   );
+  guestPlayers = computed(() => {
+    const s = this.session();
+    if (!s) return this.players();
+    const coupleNames = [s.person_a_name.toLowerCase(), s.person_b_name.toLowerCase()];
+    return this.players().filter(p => !coupleNames.includes(p.display_name.toLowerCase()));
+  });
 
   ngOnInit(): void {
     this.code.set(this.route.snapshot.paramMap.get('code') ?? '');
     this.loadSession();
     this.loadQuestions();
+    this.loadPlayers();
+    this.playerPollSub = interval(3000).pipe(
+      switchMap(() => this.sessionService.getPlayers(this.code()))
+    ).subscribe({
+      next: (res) => this.players.set(res.players),
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.playerPollSub?.unsubscribe();
+  }
+
+  loadPlayers(): void {
+    this.sessionService.getPlayers(this.code()).subscribe({
+      next: (res) => this.players.set(res.players),
+    });
+  }
+
+  clearPlayers(): void {
+    this.sessionService.clearPlayers(this.code()).subscribe({
+      next: () => this.players.set([]),
+    });
+  }
+
+  showQrModal(type: 'guest' | 'couple'): void {
+    this.qrModalType.set(type);
+    const s = this.session();
+    this.qrBroadcast.show({
+      type: 'show',
+      qrType: type,
+      guestUrl: this.qrData(),
+      coupleUrlA: this.coupleUrlA(),
+      coupleUrlB: this.coupleUrlB(),
+      personAName: s?.person_a_name,
+      personBName: s?.person_b_name,
+    });
+  }
+
+  closeQrModal(): void {
+    this.qrModalType.set(null);
+    this.qrBroadcast.hide();
+  }
+
+  editSession(): void {
+    const s = this.session();
+    if (!s) return;
+    this.editingSession.set({
+      person_a_name: s.person_a_name,
+      person_b_name: s.person_b_name,
+      host_name: s.host_name ?? '',
+    });
+  }
+
+  cancelSessionEdit(): void {
+    this.editingSession.set(null);
+  }
+
+  updateSessionField(field: string, value: string): void {
+    const e = this.editingSession();
+    if (!e) return;
+    this.editingSession.set({ ...e, [field]: value });
+  }
+
+  saveSession(): void {
+    const e = this.editingSession();
+    if (!e) return;
+    this.sessionService.updateSession(this.code(), e).subscribe({
+      next: () => {
+        this.editingSession.set(null);
+        this.loadSession();
+        this.showSuccess('Session aktualisiert.');
+      },
+      error: () => this.showError('Fehler beim Speichern.')
+    });
   }
 
   setTab(tab: TabType): void {
@@ -104,7 +196,7 @@ export class SessionDetailComponent implements OnInit {
     this.quizForm.set({ ...this.quizForm(), [field]: value });
   }
 
-  updateIchOderDuForm(field: keyof AddIchOderDuRequest, value: string): void {
+  updateIchOderDuForm(field: keyof AddIchOderDuRequest, value: string | number): void {
     this.ichOderDuForm.set({ ...this.ichOderDuForm(), [field]: value });
   }
 
@@ -144,7 +236,7 @@ export class SessionDetailComponent implements OnInit {
     this.questionService.addIchOderDu(this.code(), form).subscribe({
       next: () => {
         this.addingIchOderDu.set(false);
-        this.ichOderDuForm.set({ text: '', correct_answer: 'ich' });
+        this.ichOderDuForm.set({ text: '', correct_answer: 'ich', category: '', pair_index: undefined });
         this.loadQuestions();
         this.showSuccess('Ich-oder-Du Frage hinzugefügt!');
       },
@@ -168,6 +260,36 @@ export class SessionDetailComponent implements OnInit {
         console.error(err);
       }
     });
+  }
+
+  editQuestion(q: Question): void {
+    this.editingQuestion.set({ ...q });
+  }
+
+  cancelEdit(): void {
+    this.editingQuestion.set(null);
+  }
+
+  saveQuestion(): void {
+    const q = this.editingQuestion();
+    if (!q) return;
+    this.questionService.updateQuestion(this.code(), q.id, q).subscribe({
+      next: () => {
+        this.editingQuestion.set(null);
+        this.loadQuestions();
+        this.showSuccess('Frage gespeichert.');
+      },
+      error: (err) => {
+        this.showError('Fehler beim Speichern.');
+        console.error(err);
+      }
+    });
+  }
+
+  updateEditField(field: string, value: any): void {
+    const q = this.editingQuestion();
+    if (!q) return;
+    this.editingQuestion.set({ ...q, [field]: value });
   }
 
   saveConfig(): void {

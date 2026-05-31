@@ -1,8 +1,12 @@
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { Subscription } from 'rxjs';
+import { Subscription, interval } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 import { GameService, AnswerRequest } from '../../services/game.service';
+import { SessionService } from '../../services/session.service';
+import { ScoreService } from '../../services/score.service';
+import { WakeLockService } from '../../services/wakelock.service';
 import { WebSocketService, WsMessage, WsQuestionStarted, WsRoundClosed, WsIchOderDuStarted, WsCoupleAnswered, WsScoresUpdated, WsGameEnded, WsLuckyBoost } from '../../services/websocket.service';
 import { PlayerScore } from '../../models/score.model';
 
@@ -35,22 +39,30 @@ interface CurrentQuestion {
 export class GuestGameComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private gameService = inject(GameService);
+  private sessionService = inject(SessionService);
+  private scoreService = inject(ScoreService);
   private wsService = inject(WebSocketService);
+  private wakeLock = inject(WakeLockService);
 
   code = signal('');
   playerId = signal('');
   playerName = signal('');
   sessionId = signal('');
+  personAName = signal('');
+  personBName = signal('');
 
   phase = signal<GuestPhase>('waiting');
   currentQuestion = signal<CurrentQuestion | null>(null);
+  currentQuestionType = signal<string>('guest_quiz');
   selectedAnswer = signal<string | null>(null);
   correctAnswer = signal<string | null>(null);
   ichOderDuText = signal<string | null>(null);
   coupleAnswer = signal<string | null>(null);
+  iodGuess = signal<string | null>(null);
   scores = signal<PlayerScore[]>([]);
   answerSubmitting = signal(false);
   answerSubmitted = signal(false);
+  screenActivated = signal(false);
 
   luckyBoostVisible = signal(false);
   luckyBoostMultiplier = signal(1);
@@ -58,6 +70,8 @@ export class GuestGameComponent implements OnInit, OnDestroy {
   countdownWidth = signal(100);
   private countdownInterval?: ReturnType<typeof setInterval>;
   private wsSub?: Subscription;
+  private pollSub?: Subscription;
+  private lastSeenRoundId = '';
   private boostTimer?: ReturnType<typeof setTimeout>;
 
   currentMultiplier = computed(() => {
@@ -80,19 +94,72 @@ export class GuestGameComponent implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
+    this.wakeLock.acquire();
     this.code.set(this.route.snapshot.paramMap.get('code') ?? '');
     this.playerId.set(localStorage.getItem('player_id') ?? '');
     this.playerName.set(localStorage.getItem('player_display_name') ?? '');
     this.sessionId.set(localStorage.getItem('session_id') ?? '');
 
-    if (this.sessionId()) {
-      this.wsService.connect(this.sessionId());
+    // Load couple names for Ich-oder-Du display
+    this.sessionService.getByCode(this.code()).subscribe({
+      next: (s) => {
+        this.personAName.set(s.person_a_name);
+        this.personBName.set(s.person_b_name);
+      },
+      error: () => {}
+    });
+
+    if (this.code()) {
+      // Connect WS for all game events
+      this.wsService.connect(this.code());
       this.wsSub = this.wsService.messages().subscribe(msg => this.handleWsMessage(msg));
+
+      // Start polling immediately - no initial state snapshot needed
+      // WS events and polling both use lastSeenRoundId to avoid duplicates
+      this.startPolling();
     }
   }
 
+  private startPolling(): void {
+    this.pollSub = interval(1500).pipe(
+      switchMap(() => this.gameService.getState(this.code()))
+    ).subscribe({
+      next: (state) => {
+        if (!state.current_round_id || !state.question_text) return;
+        if (state.current_round_id === this.lastSeenRoundId) return;
+
+        const p = this.phase();
+        if (p === 'question' || p === 'answered') return;
+
+        if (state.status === 'question') {
+          this.lastSeenRoundId = state.current_round_id;
+          this.currentQuestion.set({
+            round_id: state.current_round_id,
+            question_text: state.question_text,
+            option_a: state.option_a || '',
+            option_b: state.option_b || '',
+            option_c: state.option_c || '',
+            option_d: state.option_d || '',
+            round_number: state.current_round_number,
+            total_questions: state.total_questions,
+          });
+          this.currentQuestionType.set(state.question_type || 'guest_quiz');
+          this.selectedAnswer.set(null);
+          this.correctAnswer.set(null);
+          this.answerSubmitted.set(false);
+          this.iodGuess.set(null);
+          this.phase.set('question');
+          this.startCountdown(10);
+        }
+      },
+      error: () => {}
+    });
+  }
+
   ngOnDestroy(): void {
+    this.wakeLock.release();
     this.wsSub?.unsubscribe();
+    this.pollSub?.unsubscribe();
     this.wsService.disconnect();
     this.stopCountdown();
     clearTimeout(this.boostTimer);
@@ -106,6 +173,9 @@ export class GuestGameComponent implements OnInit, OnDestroy {
       }
       case 'QuestionStarted': {
         const q = msg as WsQuestionStarted;
+        // Skip if we already have this round (from polling)
+        if (q.round_id === this.lastSeenRoundId) break;
+        this.lastSeenRoundId = q.round_id;
         this.currentQuestion.set({
           round_id: q.round_id,
           question_text: q.question_text,
@@ -116,30 +186,44 @@ export class GuestGameComponent implements OnInit, OnDestroy {
           round_number: q.round_number,
           total_questions: q.total_questions,
         });
+        this.currentQuestionType.set((q as any).question_type || 'guest_quiz');
         this.selectedAnswer.set(null);
         this.correctAnswer.set(null);
         this.answerSubmitted.set(false);
+        this.iodGuess.set(null);
         this.phase.set('question');
-        this.startCountdown(30);
+        this.startCountdown(10);
         break;
       }
       case 'RoundClosed': {
         const rc = msg as WsRoundClosed;
         this.correctAnswer.set(rc.correct_answer);
         this.stopCountdown();
-        this.phase.set('round-result');
+        // For ich_oder_du: show couple-answered phase (einig/uneinig)
+        // For quiz: show round-result phase (richtig/falsch)
+        if (this.currentQuestionType() === 'ich_oder_du') {
+          this.phase.set('couple-answered');
+        } else {
+          this.phase.set('round-result');
+        }
+        // Fetch updated scores
+        this.scoreService.getScores(this.code()).subscribe({
+          next: (scores) => this.scores.set(scores),
+          error: () => {}
+        });
         break;
       }
       case 'IchOderDuStarted': {
         const iod = msg as WsIchOderDuStarted;
         this.ichOderDuText.set(iod.ich_oder_du_text);
+        this.iodGuess.set(null);
         this.phase.set('ich-oder-du');
         break;
       }
       case 'CoupleAnswered': {
         const ca = msg as WsCoupleAnswered;
         this.coupleAnswer.set(ca.couple_answer);
-        this.phase.set('couple-answered');
+        // Don't change phase here - wait for RoundClosed from admin clicking "Auflösen"
         break;
       }
       case 'ScoresUpdated': {
@@ -174,7 +258,7 @@ export class GuestGameComponent implements OnInit, OnDestroy {
     }
   }
 
-  submitAnswer(answer: 'A' | 'B' | 'C' | 'D'): void {
+  submitAnswer(answer: string): void {
     if (this.answerSubmitted() || this.answerSubmitting()) return;
 
     this.selectedAnswer.set(answer);
@@ -199,7 +283,22 @@ export class GuestGameComponent implements OnInit, OnDestroy {
     });
   }
 
-  private startCountdown(seconds: number): void {
+  activateScreen(): void {
+    this.screenActivated.set(true);
+    this.wakeLock.acquire();
+  }
+
+  submitIodGuess(guess: 'ich' | 'du'): void {
+    this.iodGuess.set(guess);
+    // Submit guess to backend
+    this.gameService.submitAnswer(this.code(), {
+      player_id: this.playerId(),
+      player_name: this.playerName(),
+      answer: guess,
+    }).subscribe({ error: () => {} });
+  }
+
+  private startCountdown(seconds: number = 10): void {
     this.stopCountdown();
     this.countdownWidth.set(100);
     const step = 100 / (seconds * 10);

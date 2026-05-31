@@ -11,18 +11,17 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 pub async fn ws_upgrade(
     ws: WebSocketUpgrade,
-    Path(session_id): Path<Uuid>,
+    Path(session_id): Path<String>,
     Extension(registry): Extension<Arc<RoomRegistry>>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, session_id, registry))
 }
 
-async fn handle_socket(socket: WebSocket, session_id: Uuid, registry: Arc<RoomRegistry>) {
-    let session_key = session_id.to_string();
+async fn handle_socket(socket: WebSocket, session_id: String, registry: Arc<RoomRegistry>) {
+    let session_key = session_id;
     let (mut ws_tx, mut ws_rx) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
 

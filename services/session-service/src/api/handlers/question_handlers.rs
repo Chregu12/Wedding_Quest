@@ -4,7 +4,7 @@ use rf_core::{AppError, AppResult};
 use crate::{
     api::dto::question_dto::{
         AddGuestQuizRequest, AddIchOderDuRequest, QuestionResponse, ScoreConfigResponse,
-        UpdateScoreConfigRequest,
+        UpdateQuestionRequest, UpdateScoreConfigRequest,
     },
     domain::{
         game_session::{repository::GameSessionRepository, value_objects::GameCode},
@@ -89,6 +89,8 @@ pub async fn add_ich_oder_du(
         req.text,
         couple_answer,
         req.order_index.unwrap_or(0),
+        req.category,
+        req.pair_index,
     );
 
     let question_repo = SeaOrmQuestionRepository::new(state.db.connection().clone());
@@ -206,6 +208,42 @@ pub async fn update_score_config(
     }))
 }
 
+/// PUT /sessions/:code/questions/:question_id
+pub async fn update_question(
+    Extension(state): Extension<AppState>,
+    Path((_code, question_id)): Path<(String, String)>,
+    Json(req): Json<UpdateQuestionRequest>,
+) -> AppResult<Json<QuestionResponse>> {
+    let question_id: uuid::Uuid = question_id.parse()
+        .map_err(|_| AppError::BadRequest { message: "Invalid question_id".into() })?;
+
+    let question_repo = SeaOrmQuestionRepository::new(state.db.connection().clone());
+    let mut question = question_repo
+        .find_by_id(question_id)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?
+        .ok_or_else(|| AppError::NotFound { resource: "Question".into() })?;
+
+    // Apply partial updates
+    if let Some(text) = req.text { question.text = text; }
+    if let Some(opt) = req.option_a { question.option_a = Some(opt); }
+    if let Some(opt) = req.option_b { question.option_b = Some(opt); }
+    if let Some(opt) = req.option_c { question.option_c = Some(opt); }
+    if let Some(opt) = req.option_d { question.option_d = Some(opt); }
+    if let Some(ans) = req.correct_answer { question.correct_answer = ans; }
+    if let Some(idx) = req.order_index { question.order_index = idx; }
+    if let Some(pts) = req.points { question.points = pts; }
+    if let Some(cat) = req.category { question.category = Some(cat); }
+    if let Some(pi) = req.pair_index { question.pair_index = Some(pi); }
+
+    question_repo
+        .update(&question)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?;
+
+    Ok(Json(to_response(&question)))
+}
+
 fn to_response(q: &Question) -> QuestionResponse {
     QuestionResponse {
         id: q.id,
@@ -218,6 +256,8 @@ fn to_response(q: &Question) -> QuestionResponse {
         correct_answer: q.correct_answer.clone(),
         order_index: q.order_index,
         points: q.points,
+        category: q.category.clone(),
+        pair_index: q.pair_index,
         created_at: q.created_at,
     }
 }

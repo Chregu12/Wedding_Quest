@@ -1,12 +1,16 @@
 import {
-  Component, inject, signal, computed, OnInit, OnDestroy
+  Component, inject, signal, computed, OnInit, OnDestroy, effect
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { QRCodeModule } from 'angularx-qrcode';
 import { Subscription, interval } from 'rxjs';
 import { SessionService } from '../../services/session.service';
 import { ScoreService } from '../../services/score.service';
 import { WebSocketService, WsMessage, WsQuestionStarted, WsRoundClosed, WsIchOderDuStarted, WsCoupleAnswered, WsScoresUpdated, WsLuckyBoost, WsGameEnded } from '../../services/websocket.service';
+import { WakeLockService } from '../../services/wakelock.service';
+import { QrBroadcastService } from '../../services/qr-broadcast.service';
+import { DisplayBroadcastService } from '../../services/display-broadcast.service';
 import { PlayerScore } from '../../models/score.model';
 
 type DisplayPhase = 'lobby' | 'question' | 'round-result' | 'ich-oder-du' | 'couple-answered' | 'game-over';
@@ -25,7 +29,7 @@ interface QuestionInfo {
 @Component({
   selector: 'app-leaderboard-display',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, QRCodeModule],
   templateUrl: './leaderboard-display.component.html',
 })
 export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
@@ -33,6 +37,9 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
   private sessionService = inject(SessionService);
   private scoreService = inject(ScoreService);
   private wsService = inject(WebSocketService);
+  private wakeLock = inject(WakeLockService);
+  qrBroadcast = inject(QrBroadcastService);
+  displayBroadcast = inject(DisplayBroadcastService);
 
   code = signal('');
   sessionId = signal('');
@@ -42,9 +49,14 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
   prevScores = signal<Map<string, number>>(new Map());
 
   currentQuestion = signal<QuestionInfo | null>(null);
+  currentQuestionType = signal<string>('guest_quiz');
+  personAName = signal('');
+  personBName = signal('');
   correctAnswer = signal<string | null>(null);
   ichOderDuText = signal<string | null>(null);
   coupleAnswer = signal<string | null>(null);
+  coupleAnswerA = signal<string | null>(null);
+  coupleAnswerB = signal<string | null>(null);
 
   countdownWidth = signal(100);
   roundNumber = signal(0);
@@ -60,23 +72,36 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
   private boostTimer?: ReturnType<typeof setTimeout>;
 
   currentMultiplier = computed(() => {
-    const timeTaken = (100 - this.countdownWidth()) * 30 / 100;
-    if (timeTaken <= 10) return 3;
-    if (timeTaken <= 20) return 2;
+    const timeTaken = (100 - this.countdownWidth()) * 10 / 100;
+    if (timeTaken <= 3) return 3;
+    if (timeTaken <= 6) return 2;
     return 1;
   });
 
   top3 = computed(() => this.scores().slice(0, 3));
   rest = computed(() => this.scores().slice(3));
 
+  constructor() {
+    // React to display broadcast events (game-over from admin)
+    effect(() => {
+      const overlay = this.displayBroadcast.current();
+      if (overlay?.type === 'game-over') {
+        this.phase.set('game-over');
+      }
+    });
+  }
+
   ngOnInit(): void {
+    this.wakeLock.acquire();
     const code = this.route.snapshot.paramMap.get('code') ?? '';
     this.code.set(code);
 
     this.sessionService.getByCode(code).subscribe({
       next: (session: import('../../models/session.model').Session) => {
         this.sessionId.set(session.id);
-        this.wsService.connect(session.id);
+        this.personAName.set(session.person_a_name);
+        this.personBName.set(session.person_b_name);
+        this.wsService.connect(code);
         this.wsSub = this.wsService.messages().subscribe(m => this.handleWs(m));
         this.loadScores();
       },
@@ -88,6 +113,7 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.wakeLock.release();
     this.wsSub?.unsubscribe();
     this.wsService.disconnect();
     this.stopCountdown();
@@ -119,6 +145,7 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
       case 'QuestionStarted': {
         const q = msg as WsQuestionStarted;
         this.prevScores.set(new Map(this.scores().map(s => [s.player_id, s.total_score])));
+        this.currentQuestionType.set((q as any).question_type || 'guest_quiz');
         this.currentQuestion.set({
           round_id: q.round_id,
           question_text: q.question_text,
@@ -134,7 +161,11 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
         this.correctAnswer.set(null);
         this.coupleAnswer.set(null);
         this.phase.set('question');
-        this.startCountdown(30);
+        // Sync timer with server's started_at
+        const startedAt = (q as any).started_at;
+        const elapsed = startedAt ? (Date.now() - new Date(startedAt).getTime()) / 1000 : 0;
+        const remaining = Math.max(0, 10 - elapsed);
+        this.startCountdown(remaining > 0 ? remaining : 10);
         break;
       }
       case 'RoundClosed': {
@@ -153,7 +184,9 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
       case 'CoupleAnswered': {
         const ca = msg as WsCoupleAnswered;
         this.coupleAnswer.set(ca.couple_answer);
-        this.phase.set('couple-answered');
+        this.coupleAnswerA.set(ca.answer_a);
+        this.coupleAnswerB.set(ca.answer_b);
+        // Don't change phase - wait for RoundClosed (admin clicks "Auflösen")
         break;
       }
       case 'ScoresUpdated': {
@@ -218,5 +251,15 @@ export class LeaderboardDisplayComponent implements OnInit, OnDestroy {
 
   podiumHeight(rank: number): string {
     return rank === 1 ? 'h-36' : rank === 2 ? 'h-24' : 'h-16';
+  }
+
+  /** Returns the actual rank (1-based) for a player, accounting for ties */
+  actualRank(index: number): number {
+    const t3 = this.top3();
+    if (index === 0) return 1;
+    if (t3[index].total_score === t3[0].total_score) return 1;
+    if (index === 1) return 2;
+    if (t3[index].total_score === t3[1].total_score) return 2;
+    return 3;
   }
 }

@@ -19,6 +19,8 @@ pub struct Model {
     pub ich_oder_du_text: Option<String>,
     pub ich_oder_du_correct: Option<String>,
     pub couple_answer: Option<String>,
+    pub couple_answer_a: Option<String>,
+    pub couple_answer_b: Option<String>,
     pub status: String,
     pub round_number: i32,
     pub started_at: DateTimeWithTimeZone,

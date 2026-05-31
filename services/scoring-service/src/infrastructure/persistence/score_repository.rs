@@ -1,6 +1,6 @@
 use sea_orm::{
     sea_query::OnConflict, ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
-    EntityTrait, QueryFilter, QueryOrder,
+    EntityTrait, QueryFilter, QueryOrder, ModelTrait,
 };
 use uuid::Uuid;
 
@@ -12,7 +12,7 @@ use super::models::{
         ActiveModel as PlayerActiveModel, Column as PlayerColumn, Entity as PlayerEntity,
         Model as PlayerModel,
     },
-    round_score::{ActiveModel as RoundActiveModel, Entity as RoundEntity},
+    round_score::{ActiveModel as RoundActiveModel, Column as RoundColumn, Entity as RoundEntity},
 };
 
 fn model_to_entity(m: PlayerModel) -> PlayerScore {
@@ -148,5 +148,19 @@ impl ScoreRepository {
             .await?;
 
         Ok(model.map(model_to_entity))
+    }
+
+    pub async fn delete_by_session(&self, session_code: &str) -> Result<(), AppError> {
+        // Delete round_scores
+        RoundEntity::delete_many()
+            .filter(RoundColumn::SessionCode.eq(session_code))
+            .exec(&self.db)
+            .await?;
+        // Delete player_scores
+        PlayerEntity::delete_many()
+            .filter(PlayerColumn::SessionCode.eq(session_code))
+            .exec(&self.db)
+            .await?;
+        Ok(())
     }
 }

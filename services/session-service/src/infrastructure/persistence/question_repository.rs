@@ -37,6 +37,8 @@ impl QuestionRepository for SeaOrmQuestionRepository {
             correct_answer: Set(q.correct_answer.clone()),
             order_index: Set(q.order_index),
             points: Set(q.points),
+            category: Set(q.category.clone()),
+            pair_index: Set(q.pair_index),
             created_at: Set(q.created_at.fixed_offset()),
         };
         Entity::insert(model).exec(&self.db).await?;
@@ -54,6 +56,28 @@ impl QuestionRepository for SeaOrmQuestionRepository {
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Question>, AppError> {
         let model = Entity::find_by_id(id).one(&self.db).await?;
         model.map(map_model).transpose()
+    }
+
+    async fn update(&self, q: &Question) -> Result<(), AppError> {
+        let model = ActiveModel {
+            id: Set(q.id),
+            session_id: Set(q.session_id),
+            question_type: Set(q.question_type.as_str().to_string()),
+            text: Set(q.text.clone()),
+            option_a: Set(q.option_a.clone()),
+            option_b: Set(q.option_b.clone()),
+            option_c: Set(q.option_c.clone()),
+            option_d: Set(q.option_d.clone()),
+            correct_answer: Set(q.correct_answer.clone()),
+            order_index: Set(q.order_index),
+            points: Set(q.points),
+            category: Set(q.category.clone()),
+            pair_index: Set(q.pair_index),
+            created_at: Set(q.created_at.fixed_offset()),
+        };
+        use sea_orm::ActiveModelTrait;
+        model.update(&self.db).await?;
+        Ok(())
     }
 
     async fn delete(&self, id: Uuid) -> Result<(), AppError> {
@@ -75,6 +99,8 @@ fn map_model(m: super::models::question::Model) -> Result<Question, AppError> {
         correct_answer: m.correct_answer,
         order_index: m.order_index,
         points: m.points,
+        category: m.category,
+        pair_index: m.pair_index,
         created_at: DateTime::from(m.created_at),
     })
 }

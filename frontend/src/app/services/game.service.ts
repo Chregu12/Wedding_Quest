@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-const ENGINE_API = 'http://localhost:3003';
+const ENGINE_API = `http://${window.location.hostname}:3003`;
 
 export interface RoundInfo {
   round_id: string;
@@ -11,6 +11,7 @@ export interface RoundInfo {
   option_b: string;
   option_c: string;
   option_d: string;
+  correct_answer: string;
   round_number: number;
   total_questions: number;
 }
@@ -20,12 +21,20 @@ export interface GameState {
   current_round_id?: string;
   current_round_number: number;
   total_questions: number;
+  question_type?: string;
+  question_text?: string;
+  option_a?: string;
+  option_b?: string;
+  option_c?: string;
+  option_d?: string;
+  started_at?: string;
 }
 
 export interface AnswerRequest {
   player_id: string;
   player_name: string;
-  answer: 'A' | 'B' | 'C' | 'D';
+  answer: string;
+  couple?: boolean;
 }
 
 export interface AnswerResponse {
@@ -47,8 +56,9 @@ export interface CoupleAnswerRequest {
 export class GameService {
   private http = inject(HttpClient);
 
-  startGame(code: string): Observable<RoundInfo> {
-    return this.http.post<RoundInfo>(`${ENGINE_API}/games/${code}/start`, {});
+  startGame(code: string, questionId?: string): Observable<RoundInfo> {
+    const body = questionId ? { question_id: questionId } : {};
+    return this.http.post<RoundInfo>(`${ENGINE_API}/games/${code}/start`, body);
   }
 
   getState(code: string): Observable<GameState> {
@@ -67,7 +77,15 @@ export class GameService {
     return this.http.post<void>(`${ENGINE_API}/games/${code}/couple-answer`, request);
   }
 
-  nextQuestion(code: string): Observable<RoundInfo | null> {
-    return this.http.post<RoundInfo | null>(`${ENGINE_API}/games/${code}/next-question`, {});
+  nextQuestion(code: string, questionId?: string): Observable<RoundInfo | null> {
+    const body = questionId ? { question_id: questionId } : {};
+    return this.http.post<RoundInfo | null>(`${ENGINE_API}/games/${code}/next-question`, body);
+  }
+
+  submitCoupleIndividualAnswer(code: string, person: 'a' | 'b', answer: string): Observable<{ both_answered: boolean; agree?: boolean; final_answer?: string }> {
+    return this.http.post<{ both_answered: boolean; agree?: boolean; final_answer?: string }>(
+      `${ENGINE_API}/games/${code}/couple-individual-answer`,
+      { person, answer }
+    );
   }
 }

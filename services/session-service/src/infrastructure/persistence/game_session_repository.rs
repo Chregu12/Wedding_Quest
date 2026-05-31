@@ -84,6 +84,13 @@ impl GameSessionRepository for SeaOrmGameSessionRepository {
         }
     }
 
+    async fn find_all(&self) -> Result<Vec<GameSession>, AppError> {
+        let models = Entity::find()
+            .all(&self.db)
+            .await?;
+        models.into_iter().map(Self::model_to_entity).collect()
+    }
+
     async fn update(&self, session: &GameSession) -> Result<(), AppError> {
         let model = ActiveModel {
             id: Set(session.id),

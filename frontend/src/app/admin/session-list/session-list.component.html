@@ -1,0 +1,71 @@
+<!-- Top Nav -->
+<nav class="bg-white shadow-sm border-b border-rose-100">
+  <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">💍</span>
+      <span class="font-bold text-rose-600 text-lg">Wedding Quest</span>
+      <span class="text-gray-300">|</span>
+      <span class="text-gray-600 text-sm">Admin</span>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-4xl mx-auto px-4 py-8">
+  <div class="flex items-center justify-between mb-8">
+    <h1 class="text-2xl font-bold text-gray-800">Sessions</h1>
+    <button
+      (click)="createNew()"
+      class="bg-rose-500 hover:bg-rose-600 text-white font-semibold px-5 py-2.5 rounded-full transition-colors text-sm"
+    >
+      + Neue Session
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="text-center py-12 text-gray-400">
+      <div class="text-3xl mb-3 animate-spin">⏳</div>
+      <p>Lade Sessions...</p>
+    </div>
+  } @else if (sessions().length === 0) {
+    <div class="text-center py-16">
+      <div class="text-5xl mb-4">💍</div>
+      <h2 class="text-xl font-bold text-gray-700 mb-2">Noch keine Sessions</h2>
+      <p class="text-gray-500 mb-6">Erstelle eine neue Session um loszulegen.</p>
+      <button
+        (click)="createNew()"
+        class="bg-rose-500 hover:bg-rose-600 text-white font-semibold px-6 py-3 rounded-full transition-colors"
+      >
+        Erste Session erstellen
+      </button>
+    </div>
+  } @else {
+    <div class="space-y-4">
+      @for (session of sessions(); track session.id) {
+        <div
+          (click)="openSession(session.code)"
+          class="bg-white rounded-2xl shadow-md p-5 cursor-pointer hover:shadow-lg hover:border-rose-200 border-2 border-transparent transition-all"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-gray-800">
+                {{ session.person_a_name }} & {{ session.person_b_name }}
+              </h2>
+              <div class="flex items-center gap-3 mt-1">
+                <span class="bg-rose-100 text-rose-700 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
+                  {{ session.code }}
+                </span>
+                <span class="text-xs px-2 py-0.5 rounded-full"
+                  [class]="session.status === 'lobby' ? 'bg-yellow-100 text-yellow-700' :
+                           session.status === 'active' ? 'bg-green-100 text-green-700' :
+                           'bg-gray-100 text-gray-600'">
+                  {{ session.status }}
+                </span>
+              </div>
+            </div>
+            <span class="text-gray-300 text-2xl">→</span>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

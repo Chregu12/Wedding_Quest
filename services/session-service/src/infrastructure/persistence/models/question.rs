@@ -16,6 +16,8 @@ pub struct Model {
     pub correct_answer: String,
     pub order_index: i32,
     pub points: i32,
+    pub category: Option<String>,
+    pub pair_index: Option<i32>,
     pub created_at: DateTimeWithTimeZone,
 }
 

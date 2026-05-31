@@ -7,8 +7,8 @@ use crate::errors::AppError;
 use async_trait::async_trait;
 use chrono::DateTime;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, DeleteMany, EntityTrait,
+    ModelTrait, PaginatorTrait, QueryFilter,
 };
 use uuid::Uuid;
 
@@ -110,6 +110,16 @@ impl PlayerRepository for SeaOrmPlayerRepository {
             updated_at: Set(chrono::Utc::now().fixed_offset()),
         };
         model.update(&self.db).await?;
+        Ok(())
+    }
+}
+
+impl SeaOrmPlayerRepository {
+    pub async fn delete_all_by_session(&self, session_id: Uuid) -> Result<(), AppError> {
+        Entity::delete_many()
+            .filter(Column::SessionId.eq(session_id))
+            .exec(&self.db)
+            .await?;
         Ok(())
     }
 }

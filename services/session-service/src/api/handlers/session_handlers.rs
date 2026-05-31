@@ -24,6 +24,31 @@ use axum::{
 use rf_core::AppError;
 use rf_core::AppResult;
 
+pub async fn list_sessions(
+    Extension(state): Extension<AppState>,
+) -> AppResult<Json<Vec<SessionResponse>>> {
+    let session_repo = SeaOrmGameSessionRepository::new(state.db.connection().clone());
+    let sessions = session_repo
+        .find_all()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{}", e)))?;
+
+    let responses: Vec<SessionResponse> = sessions
+        .into_iter()
+        .map(|s| SessionResponse {
+            id: s.id,
+            code: s.code.value().to_string(),
+            status: s.status.as_str().to_string(),
+            person_a_name: s.person_a_name,
+            person_b_name: s.person_b_name,
+            started_at: s.started_at,
+            created_at: s.created_at,
+        })
+        .collect();
+
+    Ok(Json(responses))
+}
+
 pub async fn create_session(
     Extension(state): Extension<AppState>,
     Json(req): Json<CreateSessionRequest>,
@@ -73,6 +98,39 @@ pub async fn get_session(
         started_at: session.started_at,
         created_at: session.created_at,
     }))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateSessionRequest {
+    pub person_a_name: Option<String>,
+    pub person_b_name: Option<String>,
+    pub host_name: Option<String>,
+}
+
+pub async fn update_session(
+    Extension(state): Extension<AppState>,
+    Path(code): Path<String>,
+    Json(req): Json<UpdateSessionRequest>,
+) -> AppResult<StatusCode> {
+    let session_repo = SeaOrmGameSessionRepository::new(state.db.connection().clone());
+    let code_vo = GameCode::from_string(code)
+        .map_err(|e| AppError::BadRequest { message: e })?;
+
+    let mut session = session_repo
+        .find_by_code(&code_vo)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{}", e)))?
+        .ok_or_else(|| AppError::NotFound { resource: "Session".into() })?;
+
+    if let Some(name) = req.person_a_name { session.person_a_name = name; }
+    if let Some(name) = req.person_b_name { session.person_b_name = name; }
+    if let Some(name) = req.host_name { session.host_name = name; }
+
+    session_repo.update(&session)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{}", e)))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn start_session(

@@ -19,6 +19,7 @@ export interface WsQuestionStarted extends WsMessage {
   option_b: string;
   option_c: string;
   option_d: string;
+  correct_answer: string;
   round_number: number;
   total_questions: number;
 }
@@ -39,6 +40,8 @@ export interface WsCoupleAnswered extends WsMessage {
   type: 'CoupleAnswered';
   round_id: string;
   couple_answer: string;
+  answer_a: string;
+  answer_b: string;
 }
 
 export interface WsScoresUpdated extends WsMessage {
@@ -68,10 +71,22 @@ export interface WsLuckyBoost extends WsMessage {
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private messageSubject = new Subject<WsMessage>();
+  private sessionId: string | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private intentionalClose = false;
 
   connect(sessionId: string): void {
-    if (this.ws) this.disconnect();
-    this.ws = new WebSocket(`ws://localhost:3006/ws/${sessionId}`);
+    this.intentionalClose = false;
+    this.sessionId = sessionId;
+    if (this.ws) {
+      this.intentionalClose = true;
+      this.ws.close();
+    }
+    this.doConnect(sessionId);
+  }
+
+  private doConnect(sessionId: string): void {
+    this.ws = new WebSocket(`ws://${window.location.hostname}:3006/ws/${sessionId}`);
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data as string) as WsMessage;
@@ -80,8 +95,17 @@ export class WebSocketService {
         // ignore malformed messages
       }
     };
-    this.ws.onerror = (err) => console.error('WS error', err);
-    this.ws.onclose = () => console.log('WS closed');
+    this.ws.onerror = () => {};
+    this.ws.onclose = () => {
+      if (!this.intentionalClose && this.sessionId) {
+        // Auto-reconnect after 2 seconds
+        this.reconnectTimer = setTimeout(() => {
+          if (this.sessionId) {
+            this.doConnect(this.sessionId);
+          }
+        }, 2000);
+      }
+    };
   }
 
   messages(): Observable<WsMessage> {
@@ -89,6 +113,12 @@ export class WebSocketService {
   }
 
   disconnect(): void {
+    this.intentionalClose = true;
+    this.sessionId = null;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.ws?.close();
     this.ws = null;
   }

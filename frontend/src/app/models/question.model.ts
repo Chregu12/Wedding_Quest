@@ -9,6 +9,8 @@ export interface Question {
   correct_answer: string;
   order_index: number;
   points: number;
+  category?: string;
+  pair_index?: number;
 }
 
 export interface AddGuestQuizRequest {
@@ -24,4 +26,6 @@ export interface AddGuestQuizRequest {
 export interface AddIchOderDuRequest {
   text: string;
   correct_answer: string;
+  category?: string;
+  pair_index?: number;
 }

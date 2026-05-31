@@ -1,7 +1,11 @@
 import { Routes } from '@angular/router';
 
 export const adminRoutes: Routes = [
-  { path: '', redirectTo: 'new', pathMatch: 'full' },
+  {
+    path: '',
+    loadComponent: () =>
+      import('./session-list/session-list.component').then(m => m.SessionListComponent)
+  },
   {
     path: 'new',
     loadComponent: () =>
