@@ -1,0 +1,108 @@
+# Rendered by the nginx image's envsubst at container start (only ${ADMIN_PASSWORD}
+# is substituted; nginx's own $variables are left untouched).
+
+# 1 when the admin cookie matches the configured password.
+map $cookie_wq_admin $admin_ok {
+    default 0;
+    "${ADMIN_PASSWORD}" 1;
+}
+
+# 1 when the request targets an ADMIN-ONLY endpoint. Public endpoints used by the
+# guest/display/couple pages are deliberately absent so they stay open.
+map "$request_method $uri" $needs_admin {
+    default 0;
+
+    # Questions / ich-oder-du / score config — read AND write are admin-only.
+    "~*^[A-Z]+ /api/session/sessions/[^/]+/questions"    1;
+    "~*^[A-Z]+ /api/session/sessions/[^/]+/ich-oder-du"  1;
+    "~*^[A-Z]+ /api/session/sessions/[^/]+/config"       1;
+
+    # Session collection: create (POST) and list (GET). NOT GET /sessions/<code>.
+    "~*^(POST|GET) /api/session/sessions$"               1;
+
+    # Update / delete a session. NOT public GET /sessions/<code>.
+    "~*^(PUT|DELETE|PATCH) /api/session/sessions/[^/]+$" 1;
+
+    # Clear all players. NOT public GET /sessions/<code>/players.
+    "~*^DELETE /api/session/sessions/[^/]+/players"      1;
+
+    # Game control. NOT public GET state / POST answer / couple-individual-answer.
+    "~*^POST /api/engine/games/[^/]+/(start|close-round|next-question|couple-answer)$" 1;
+
+    # Reset scores. NOT public GET /scores/<code>.
+    "~*^DELETE /api/scoring/scores/[^/]+"                1;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # Login page verifies the password against this: 204 if the cookie is valid.
+    location = /admin-check {
+        if ($admin_ok = 0) { return 401; }
+        return 204;
+    }
+
+    # ─── Backend routing (single origin). Admin endpoints require the cookie. ───
+    location /api/session/ {
+        set $wq_gate "";
+        if ($needs_admin)  { set $wq_gate "need"; }
+        if ($admin_ok = 1) { set $wq_gate "${wq_gate}ok"; }
+        if ($wq_gate = "need") { return 401; }
+
+        proxy_pass http://session-service:3002/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/engine/ {
+        set $wq_gate "";
+        if ($needs_admin)  { set $wq_gate "need"; }
+        if ($admin_ok = 1) { set $wq_gate "${wq_gate}ok"; }
+        if ($wq_gate = "need") { return 401; }
+
+        proxy_pass http://engine-service:3003/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/scoring/ {
+        set $wq_gate "";
+        if ($needs_admin)  { set $wq_gate "need"; }
+        if ($admin_ok = 1) { set $wq_gate "${wq_gate}ok"; }
+        if ($wq_gate = "need") { return 401; }
+
+        proxy_pass http://scoring-service:3004/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ─── WebSocket (realtime-service) ───
+    location /ws/ {
+        proxy_pass http://realtime-service:3006;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ─── Angular SPA (client-side routing fallback) ───
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -1,9 +1,15 @@
 import { Routes } from '@angular/router';
+import { adminGuard } from './guards/admin.guard';
 
 export const routes: Routes = [
   { path: '', redirectTo: '/join', pathMatch: 'full' },
   {
+    path: 'login',
+    loadComponent: () => import('./login/login.component').then(m => m.LoginComponent)
+  },
+  {
     path: 'admin',
+    canActivate: [adminGuard],
     loadChildren: () => import('./admin/admin.routes').then(m => m.adminRoutes)
   },
   {
