@@ -3,7 +3,8 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
 import { PlayerScore } from '../models/score.model';
 
-const SCORING_API = `http://${window.location.hostname}:3004`;
+// Routed through the gateway (nginx) — relative path keeps it single-origin/single-port.
+const SCORING_API = '/api/scoring';
 
 @Injectable({ providedIn: 'root' })
 export class ScoreService {

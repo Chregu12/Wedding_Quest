@@ -365,7 +365,6 @@ async fn handle_round_closed(
                         last_place.player_name
                     );
                 }
-            }
         }
     }
 

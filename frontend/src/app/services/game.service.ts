@@ -2,7 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-const ENGINE_API = `http://${window.location.hostname}:3003`;
+// Routed through the gateway (nginx) — relative path keeps it single-origin/single-port.
+const ENGINE_API = '/api/engine';
 
 export interface RoundInfo {
   round_id: string;
