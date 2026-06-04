@@ -10,7 +10,8 @@ import {
   PlayersResponse
 } from '../models/session.model';
 
-const SESSION_API = `http://${window.location.hostname}:3002`;
+// Routed through the gateway (nginx) — relative path keeps it single-origin/single-port.
+const SESSION_API = '/api/session';
 
 @Injectable({ providedIn: 'root' })
 export class SessionService {

@@ -1,0 +1,184 @@
+# Wedding Quest — Production stack
+#
+# Fully isolated from any other app on the host:
+#   - dedicated compose project (name: wedding-quest)
+#   - dedicated bridge network (wedding-quest-net)
+#   - dedicated named volumes (wq_*)
+#   - ONLY the gateway is published to the host (port 8080)
+#
+# Schema is created automatically on first start of each Postgres volume via
+# /docker-entrypoint-initdb.d (the services do not auto-migrate).
+#
+# Requires a .env file next to this one with:
+#   DB_PASSWORD=<strong-random-password>
+
+name: wedding-quest
+
+networks:
+  wedding-quest-net:
+    name: wedding-quest-net
+
+volumes:
+  wq_postgres_session:
+  wq_postgres_engine:
+  wq_postgres_scoring:
+  wq_redis:
+
+services:
+  postgres-session:
+    image: postgres:16-alpine
+    container_name: wedding-quest-postgres-session
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wedding_session
+      POSTGRES_USER: wedding
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - wq_postgres_session:/var/lib/postgresql/data
+      - ./services/session-service/database/migrations:/docker-entrypoint-initdb.d:ro
+    networks: [wedding-quest-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_session"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-engine:
+    image: postgres:16-alpine
+    container_name: wedding-quest-postgres-engine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wedding_engine
+      POSTGRES_USER: wedding
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - wq_postgres_engine:/var/lib/postgresql/data
+      - ./services/engine-service/database/migrations:/docker-entrypoint-initdb.d:ro
+    networks: [wedding-quest-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-scoring:
+    image: postgres:16-alpine
+    container_name: wedding-quest-postgres-scoring
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wedding_scoring
+      POSTGRES_USER: wedding
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - wq_postgres_scoring:/var/lib/postgresql/data
+      - ./services/scoring-service/database/migrations:/docker-entrypoint-initdb.d:ro
+    networks: [wedding-quest-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_scoring"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: wedding-quest-redis
+    restart: unless-stopped
+    volumes:
+      - wq_redis:/data
+    networks: [wedding-quest-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  session-service:
+    build:
+      context: .
+      dockerfile: services/session-service/Dockerfile
+    container_name: wedding-quest-session
+    restart: unless-stopped
+    environment:
+      APP_PORT: 3002
+      DATABASE_URL: postgresql://wedding:${DB_PASSWORD}@postgres-session:5432/wedding_session
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres-session:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [wedding-quest-net]
+
+  engine-service:
+    build:
+      context: .
+      dockerfile: services/engine-service/Dockerfile
+    container_name: wedding-quest-engine
+    restart: unless-stopped
+    environment:
+      APP_PORT: 3003
+      DATABASE_URL: postgresql://wedding:${DB_PASSWORD}@postgres-engine:5432/wedding_engine
+      REDIS_URL: redis://redis:6379
+      SESSION_SERVICE_URL: http://session-service:3002
+    depends_on:
+      postgres-engine:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      session-service:
+        condition: service_started
+    networks: [wedding-quest-net]
+
+  scoring-service:
+    build:
+      context: .
+      dockerfile: services/scoring-service/Dockerfile
+    container_name: wedding-quest-scoring
+    restart: unless-stopped
+    environment:
+      APP_PORT: 3004
+      DATABASE_URL: postgresql://wedding:${DB_PASSWORD}@postgres-scoring:5432/wedding_scoring
+      REDIS_URL: redis://redis:6379
+      ENGINE_SERVICE_URL: http://engine-service:3003
+      SESSION_SERVICE_URL: http://session-service:3002
+    depends_on:
+      postgres-scoring:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      engine-service:
+        condition: service_started
+      session-service:
+        condition: service_started
+    networks: [wedding-quest-net]
+
+  realtime-service:
+    build:
+      context: .
+      dockerfile: services/realtime-service/Dockerfile
+    container_name: wedding-quest-realtime
+    restart: unless-stopped
+    environment:
+      APP_PORT: 3006
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [wedding-quest-net]
+
+  # nginx gateway: serves the Angular SPA and reverse-proxies /api/* + /ws.
+  # The ONLY service published to the host.
+  gateway:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: wedding-quest-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - session-service
+      - engine-service
+      - scoring-service
+      - realtime-service
+    networks: [wedding-quest-net]

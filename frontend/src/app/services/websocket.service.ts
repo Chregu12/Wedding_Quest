@@ -86,7 +86,9 @@ export class WebSocketService {
   }
 
   private doConnect(sessionId: string): void {
-    this.ws = new WebSocket(`ws://${window.location.hostname}:3006/ws/${sessionId}`);
+    // Routed through the gateway (nginx) — same host/port as the page, ws/wss auto-selected.
+    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    this.ws = new WebSocket(`${wsProto}://${window.location.host}/ws/${sessionId}`);
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data as string) as WsMessage;
