@@ -9,6 +9,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_session_data:/var/lib/postgresql/data
+      - ./services/session-service/database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_session"]
       interval: 5s
@@ -25,6 +26,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_engine_data:/var/lib/postgresql/data
+      - ./services/engine-service/database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_engine"]
       interval: 5s
@@ -41,6 +43,7 @@ services:
       - "5434:5432"
     volumes:
       - postgres_scoring_data:/var/lib/postgresql/data
+      - ./services/scoring-service/database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wedding -d wedding_scoring"]
       interval: 5s
