@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
+  ENGINE_URL,
   REALTIME_WS,
   createSession,
   addManyGuestQuiz,
@@ -88,5 +89,60 @@ test.describe('End-to-end flows', () => {
     } finally {
       closeWs(ws);
     }
+  });
+
+  // Regression for the second production bug: guests loading the game page saw
+  // the previous game's first question before the moderator pressed "Timer
+  // starten". The moderator's "Spiel starten" now resets the engine first.
+  test('moderator start sequence keeps guests waiting until the timer starts', async ({ request }) => {
+    const { code } = await createSession(request);
+    await addManyGuestQuiz(request, code, 2);
+
+    // A previous game left the engine on a live question.
+    await startGame(request, code);
+    expect((await (await getState(request, code)).json()).status).toBe('question');
+
+    // Moderator clicks "Spiel starten" -> engine reset (what guests poll next).
+    await resetGame(request, code);
+    expect((await (await getState(request, code)).json()).status).toBe('waiting');
+
+    // Only when the moderator clicks "Timer starten" does a question go live.
+    await startGame(request, code);
+    expect((await (await getState(request, code)).json()).status).toBe('question');
+  });
+
+  test('a WebSocket client sees the QuestionStarted -> RoundClosed lifecycle', async ({ request }) => {
+    const { code } = await createSession(request);
+    await addManyGuestQuiz(request, code, 2);
+    let ws;
+    try {
+      ws = await connectWs(`${REALTIME_WS}/ws/${code}`);
+      await waitForMessage(ws, (m) => m.type === 'CONNECTED', 5000);
+      const started = waitForMessage(ws, (m) => m.type === 'QuestionStarted');
+      await startGame(request, code);
+      await started;
+      const closed = waitForMessage(ws, (m) => m.type === 'RoundClosed');
+      await closeRound(request, code);
+      expect((await closed).correct_answer).toBe('A');
+    } finally {
+      closeWs(ws);
+    }
+  });
+
+  test('all players answers are recorded with their correctness', async ({ request }) => {
+    const { code } = await createSession(request);
+    await addManyGuestQuiz(request, code, 2);
+    const p1 = await joinPlayer(request, code, 'Eins');
+    const p2 = await joinPlayer(request, code, 'Zwei');
+    const p3 = await joinPlayer(request, code, 'Drei');
+    const round = await startGame(request, code);
+    await submitAnswer(request, code, { player_id: p1, player_name: 'Eins', answer: 'A' });
+    await submitAnswer(request, code, { player_id: p2, player_name: 'Zwei', answer: 'B' });
+    await submitAnswer(request, code, { player_id: p3, player_name: 'Drei', answer: 'A' });
+    const list = await (
+      await request.get(`${ENGINE_URL}/games/${code}/rounds/${round.round_id}/answers`)
+    ).json();
+    expect(list.length).toBe(3);
+    expect(list.filter((a: any) => a.is_correct).length).toBe(2);
   });
 });

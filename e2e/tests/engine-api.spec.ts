@@ -13,6 +13,8 @@ import {
   nextQuestion,
   resetGame,
   coupleIndividualAnswer,
+  coupleAnswer,
+  startedIchOderDu,
 } from '../helpers/api';
 
 function fakePlayer() {
@@ -228,5 +230,87 @@ test.describe('Engine — round lifecycle', () => {
     expect(second.both_answered).toBe(true);
     expect(second.agree).toBe(true);
     expect(second.final_answer).toBe('ich');
+  });
+});
+
+test.describe('Engine — ich_oder_du & couple answer', () => {
+  test('starting with an ich_oder_du question yields that question type', async ({ request }) => {
+    const { round } = await startedIchOderDu(request);
+    expect(round.question_text).toBe('Wer kocht?');
+    expect(round.option_a).toBeNull();
+  });
+
+  test('state reports question_type ich_oder_du for an ich-oder-du round', async ({ request }) => {
+    const { code } = await startedIchOderDu(request);
+    const state = await (await getState(request, code)).json();
+    expect(state.question_type).toBe('ich_oder_du');
+  });
+
+  test('couple-answer is accepted (200)', async ({ request }) => {
+    const { code } = await startedIchOderDu(request);
+    const res = await coupleAnswer(request, code, 'ich');
+    expect(res.status()).toBe(200);
+  });
+
+  test('close-round adopts the couple answer as the correct answer', async ({ request }) => {
+    const { code } = await startedIchOderDu(request);
+    await coupleAnswer(request, code, 'ich');
+    const json = await (await closeRound(request, code)).json();
+    expect(json.correct_answer).toBe('ich');
+  });
+
+  test('couple-answer without an active game returns 404', async ({ request }) => {
+    const { code } = await createSession(request);
+    const res = await coupleAnswer(request, code, 'ich');
+    expect(res.status()).toBe(404);
+  });
+});
+
+test.describe('Engine — answer & reset edge cases', () => {
+  test('state reports question_type guest_quiz for a quiz round', async ({ request }) => {
+    const { code } = await createSession(request);
+    await addManyGuestQuiz(request, code, 2);
+    await startGame(request, code);
+    const state = await (await getState(request, code)).json();
+    expect(state.question_type).toBe('guest_quiz');
+  });
+
+  test('answering a closed round is not accepted', async ({ request }) => {
+    const { code } = await createSession(request);
+    await addManyGuestQuiz(request, code, 2);
+    await startGame(request, code);
+    await closeRound(request, code);
+    const json = await (await submitAnswer(request, code, { ...fakePlayer(), answer: 'A' })).json();
+    expect(json.accepted).toBe(false);
+  });
+
+  test('a second answer from the same player is rejected', async ({ request }) => {
+    // One answer per (round, player) is enforced by a DB unique constraint, so a
+    // duplicate submit is rejected rather than overwriting the first answer.
+    const { code } = await createSession(request);
+    await addManyGuestQuiz(request, code, 2);
+    await startGame(request, code);
+    const player = fakePlayer();
+    const first = await submitAnswer(request, code, { ...player, answer: 'A' });
+    expect((await first.json()).accepted).toBe(true);
+    const second = await submitAnswer(request, code, { ...player, answer: 'B' });
+    expect(second.ok()).toBe(false);
+  });
+
+  test('next-question with an explicit question_id uses that question', async ({ request }) => {
+    const { code } = await createSession(request);
+    const qs = await addManyGuestQuiz(request, code, 4);
+    await startGame(request, code);
+    const json = await (await nextQuestion(request, code, qs[2].id)).json();
+    expect(json.round_number).toBe(2);
+    expect(json.question_text).toBe(qs[2].text);
+  });
+
+  test('reset on a never-played session yields a waiting state', async ({ request }) => {
+    const { code } = await createSession(request);
+    expect((await resetGame(request, code)).status()).toBe(200);
+    const state = await (await getState(request, code)).json();
+    expect(state.status).toBe('waiting');
+    expect(state.current_round_id).toBeNull();
   });
 });

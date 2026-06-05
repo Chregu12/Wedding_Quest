@@ -50,6 +50,57 @@ export function waitForMessage(
   });
 }
 
+/**
+ * Attach a listener at connect time and return a live array that accumulates
+ * every parsed message. Avoids the gap between sequential `waitForMessage`
+ * calls — use with `expect.poll` to assert a message eventually arrives.
+ */
+export function collectWs(ws: WebSocket): any[] {
+  const out: any[] = [];
+  ws.on('message', (data: WebSocket.RawData) => {
+    try {
+      out.push(JSON.parse(data.toString()));
+    } catch {
+      /* ignore non-JSON frames */
+    }
+  });
+  return out;
+}
+
+/**
+ * Open a WebSocket while collecting messages from the very first frame.
+ * The server sends CONNECTED immediately on connect, so attaching the listener
+ * only after `open` can miss it — this captures it reliably.
+ */
+export function openAndCollect(
+  url: string,
+  timeoutMs = 8000,
+): Promise<{ ws: WebSocket; messages: any[] }> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    const messages: any[] = [];
+    ws.on('message', (data: WebSocket.RawData) => {
+      try {
+        messages.push(JSON.parse(data.toString()));
+      } catch {
+        /* ignore non-JSON frames */
+      }
+    });
+    const timer = setTimeout(() => {
+      ws.terminate();
+      reject(new Error(`WS connect timeout: ${url}`));
+    }, timeoutMs);
+    ws.on('open', () => {
+      clearTimeout(timer);
+      resolve({ ws, messages });
+    });
+    ws.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
 export function closeWs(ws: WebSocket | undefined) {
   try {
     ws?.close();

@@ -170,6 +170,21 @@ export function coupleIndividualAnswer(
   });
 }
 
+export function coupleAnswer(api: APIRequestContext, code: string, answer: string) {
+  return api.post(`${ENGINE_URL}/games/${code}/couple-answer`, { data: { answer } });
+}
+
+/** Create a session with two ich_oder_du questions and start the first one. */
+export async function startedIchOderDu(
+  api: APIRequestContext,
+): Promise<{ code: string; round: any }> {
+  const session = await createSession(api);
+  const first = await addIchOderDu(api, session.code, { text: 'Wer kocht?', correct: 'ich', order: 0 });
+  await addIchOderDu(api, session.code, { text: 'Wer putzt?', correct: 'du', order: 1 });
+  const round = await startGame(api, session.code, first.id);
+  return { code: session.code, round };
+}
+
 // ---- scoring-service --------------------------------------------------------
 export function getLeaderboard(api: APIRequestContext, code: string) {
   return api.get(`${SCORING_URL}/scores/${code}`);

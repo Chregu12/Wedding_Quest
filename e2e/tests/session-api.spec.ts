@@ -165,3 +165,33 @@ test.describe('Sessions — start', () => {
     expect(res.status()).toBe(404);
   });
 });
+
+test.describe('Sessions — extended', () => {
+  test('both couple names can be updated in one call', async ({ request }) => {
+    const { code } = await createSession(request);
+    const res = await request.put(`${SESSION_URL}/sessions/${code}`, {
+      data: { person_a_name: 'Lea', person_b_name: 'Nico' },
+    });
+    expect(res.status()).toBe(204);
+    const json = await (await getSession(request, code)).json();
+    expect(json.person_a_name).toBe('Lea');
+    expect(json.person_b_name).toBe('Nico');
+  });
+
+  test('the session list reflects a status change after start', async ({ request }) => {
+    const { code } = await createSession(request);
+    await request.post(`${SESSION_URL}/sessions/${code}/start`, { data: {} });
+    const list = await (await request.get(`${SESSION_URL}/sessions`)).json();
+    const entry = list.find((s: any) => s.code === code);
+    expect(entry).toBeTruthy();
+    expect(entry.status).not.toBe('lobby');
+  });
+
+  test('sequential updates each take effect', async ({ request }) => {
+    const { code } = await createSession(request);
+    await request.put(`${SESSION_URL}/sessions/${code}`, { data: { person_a_name: 'Erst' } });
+    await request.put(`${SESSION_URL}/sessions/${code}`, { data: { person_a_name: 'Zweit' } });
+    const json = await (await getSession(request, code)).json();
+    expect(json.person_a_name).toBe('Zweit');
+  });
+});

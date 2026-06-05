@@ -110,4 +110,35 @@ test.describe('Scoring — computed scores', () => {
     const scores = (await (await getLeaderboard(request, code)).json()).scores;
     expect(scores[0].rank).toBe(1);
   });
+
+  test('a played round records rounds_played for the winner', async ({ request }) => {
+    const { code } = await playRound(request);
+    await expect
+      .poll(async () => {
+        const json = await (await getLeaderboard(request, code)).json();
+        return json.scores.find((s: any) => s.player_name === 'Schnell')?.rounds_played ?? 0;
+      }, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(1);
+  });
+
+  test('resetting scores empties the leaderboard', async ({ request }) => {
+    const { code } = await playRound(request);
+    await expect
+      .poll(async () => (await (await getLeaderboard(request, code)).json()).scores.length, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    expect((await request.delete(`${SCORING_URL}/scores/${code}`)).status()).toBe(200);
+    await expect
+      .poll(async () => (await (await getLeaderboard(request, code)).json()).scores.length, {
+        timeout: 10_000,
+      })
+      .toBe(0);
+  });
+
+  test('config for an unknown code falls back to defaults', async ({ request }) => {
+    const json = await (await request.get(`${SCORING_URL}/scores/ZZZZZZ/config`)).json();
+    expect(json.base_points).toBe(100);
+    expect(json.tier1_multiplier).toBe(3.0);
+  });
 });

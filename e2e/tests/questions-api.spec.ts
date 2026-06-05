@@ -198,4 +198,35 @@ test.describe('Questions — list / update / delete', () => {
     const list = await (await request.get(`${SESSION_URL}/sessions/${code}/questions`)).json();
     expect(list.some((x: any) => x.id === q.id)).toBe(false);
   });
+
+  test('updating correct_answer changes the stored answer', async ({ request }) => {
+    const { code } = await createSession(request);
+    const q = await addGuestQuiz(request, code, { correct: 'A' });
+    const res = await request.put(`${SESSION_URL}/sessions/${code}/questions/${q.id}`, {
+      data: { correct_answer: 'C' },
+    });
+    expect(res.status()).toBe(200);
+    expect((await res.json()).correct_answer).toBe('C');
+  });
+
+  test('deleting an unknown question id is a no-op (204)', async ({ request }) => {
+    const { code } = await createSession(request);
+    const res = await request.delete(
+      `${SESSION_URL}/sessions/${code}/questions/00000000-0000-0000-0000-000000000000`,
+    );
+    expect(res.status()).toBe(204);
+  });
+
+  test('ich_oder_du stores correct_answer "du"', async ({ request }) => {
+    const { code } = await createSession(request);
+    const q = await addIchOderDu(request, code, { correct: 'du' });
+    expect(q.correct_answer).toBe('du');
+  });
+
+  test('multiple added questions all get distinct ids', async ({ request }) => {
+    const { code } = await createSession(request);
+    const ids = new Set<string>();
+    for (let i = 0; i < 5; i++) ids.add((await addGuestQuiz(request, code, { order: i })).id);
+    expect(ids.size).toBe(5);
+  });
 });
