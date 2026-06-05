@@ -11,7 +11,7 @@ use crate::{
         RoundAnswerResponse, StartGameResponse, SubmitAnswerRequest, SubmitAnswerResponse,
     },
     application::commands::{
-        close_round, couple_answer, next_question, start_game, submit_answer,
+        close_round, couple_answer, next_question, reset_game, start_game, submit_answer,
     },
     infrastructure::{
         persistence::{
@@ -57,6 +57,22 @@ pub async fn start_game(
         round_number: result.round_number,
         total_questions: result.total_questions,
     }))
+}
+
+/// POST /games/:code/reset
+/// Reset the game back to the lobby/waiting state so guests and the couple
+/// stop seeing a stale question from a previous run before a new game starts.
+pub async fn reset_game(
+    Extension(state): Extension<AppState>,
+    Path(code): Path<String>,
+) -> AppResult<StatusCode> {
+    let state_repo = GameStateRepository::new(state.db.connection().clone());
+
+    reset_game::handle(&code, &state_repo)
+        .await
+        .map_err(map_err)?;
+
+    Ok(StatusCode::OK)
 }
 
 pub async fn get_state(

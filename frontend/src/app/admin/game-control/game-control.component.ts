@@ -69,6 +69,10 @@ export class GameControlComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.code.set(this.route.snapshot.paramMap.get('code') ?? '');
 
+    // Clear any leftover game state from a previous run so guests/couple don't
+    // see a stale question on their waiting screen before we start the new game.
+    this.gameService.resetGame(this.code()).subscribe({ error: () => {} });
+
     // Load couple names
     this.initSubs.push(this.sessionService.getByCode(this.code()).subscribe({
       next: (s) => {

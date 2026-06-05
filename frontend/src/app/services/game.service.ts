@@ -66,6 +66,11 @@ export class GameService {
     return this.http.get<GameState>(`${ENGINE_API}/games/${code}/state`);
   }
 
+  /** Reset the game back to the lobby state (clears any stale round from a previous run). */
+  resetGame(code: string): Observable<void> {
+    return this.http.post<void>(`${ENGINE_API}/games/${code}/reset`, {});
+  }
+
   submitAnswer(code: string, request: AnswerRequest): Observable<AnswerResponse> {
     return this.http.post<AnswerResponse>(`${ENGINE_API}/games/${code}/answer`, request);
   }

@@ -93,6 +93,16 @@ export class CoupleGameComponent implements OnInit, OnDestroy {
         switchMap(() => this.gameService.getState(this.code()))
       ).subscribe({
         next: (state) => {
+          // Lobby reset between games: clear any stale question and return to the
+          // waiting screen. 'waiting' is only ever set by an explicit game reset.
+          if (state.status === 'waiting') {
+            if (this.phase() !== 'waiting') {
+              this.phase.set('waiting');
+              this.questionText.set(null);
+              this.lastSeenRoundId = '';
+            }
+            return;
+          }
           if (state.status === 'question' && state.current_round_id && state.current_round_id !== this.lastSeenRoundId && state.question_text) {
             this.lastSeenRoundId = state.current_round_id;
             this.questionText.set(state.question_text);

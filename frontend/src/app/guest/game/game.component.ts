@@ -125,6 +125,16 @@ export class GuestGameComponent implements OnInit, OnDestroy {
       switchMap(() => this.gameService.getState(this.code()))
     ).subscribe({
       next: (state) => {
+        // Lobby reset between games: clear any stale question and return to the
+        // waiting screen. 'waiting' is only ever set by an explicit game reset.
+        if (state.status === 'waiting') {
+          if (this.phase() !== 'waiting') {
+            this.phase.set('waiting');
+            this.currentQuestion.set(null);
+            this.lastSeenRoundId = '';
+          }
+          return;
+        }
         if (!state.current_round_id || !state.question_text) return;
         if (state.current_round_id === this.lastSeenRoundId) return;
 
