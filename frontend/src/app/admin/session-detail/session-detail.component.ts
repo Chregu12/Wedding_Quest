@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { SessionService } from '../../services/session.service';
 import { QuestionService } from '../../services/question.service';
 import { QrBroadcastService } from '../../services/qr-broadcast.service';
+import { GameService } from '../../services/game.service';
 import { Session, PlayerInfo } from '../../models/session.model';
 import { Question, AddGuestQuizRequest, AddIchOderDuRequest } from '../../models/question.model';
 import { ScoreConfig } from '../../models/score.model';
@@ -25,6 +26,7 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
   private sessionService = inject(SessionService);
   private questionService = inject(QuestionService);
   private qrBroadcast = inject(QrBroadcastService);
+  private gameService = inject(GameService);
 
   code = signal('');
   session = signal<Session | null>(null);
@@ -309,6 +311,16 @@ export class SessionDetailComponent implements OnInit, OnDestroy {
 
   startGame(): void {
     this.starting.set(true);
+    // Clear any leftover round from a previous game BEFORE the session starts,
+    // so guests loading the game page see the waiting screen until the moderator
+    // presses "Timer starten" — not the previous game's first question.
+    this.gameService.resetGame(this.code()).subscribe({
+      next: () => this.doStartSession(),
+      error: () => this.doStartSession(),
+    });
+  }
+
+  private doStartSession(): void {
     this.sessionService.start(this.code()).subscribe({
       next: () => {
         this.starting.set(false);
