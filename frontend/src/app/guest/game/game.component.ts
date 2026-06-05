@@ -114,9 +114,18 @@ export class GuestGameComponent implements OnInit, OnDestroy {
       this.wsService.connect(this.code());
       this.wsSub = this.wsService.messages().subscribe(msg => this.handleWsMessage(msg));
 
-      // Start polling immediately - no initial state snapshot needed
-      // WS events and polling both use lastSeenRoundId to avoid duplicates
-      this.startPolling();
+      // Snapshot the current round (if any) as "already seen" BEFORE we start
+      // polling, so a question that already exists when the guest arrives — a
+      // leftover round from a previous game, or one that has not been (re)started
+      // for this guest — is never shown. Only a round the admin starts AFTER this
+      // screen loads (a fresh round_id) will appear.
+      this.gameService.getState(this.code()).subscribe({
+        next: (state) => {
+          if (state.current_round_id) this.lastSeenRoundId = state.current_round_id;
+          this.startPolling();
+        },
+        error: () => this.startPolling(),
+      });
     }
   }
 

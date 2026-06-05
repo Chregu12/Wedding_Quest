@@ -88,6 +88,22 @@ export class CoupleGameComponent implements OnInit, OnDestroy {
       this.wsService.connect(this.code());
       this.wsSub = this.wsService.messages().subscribe(msg => this.handleWsMessage(msg));
 
+      // Snapshot the current round as "already seen" BEFORE polling, so a
+      // question that already exists when this screen loads (a leftover round, or
+      // one not (re)started for us) is never shown — only a round the admin
+      // starts afterwards (a fresh round_id) appears.
+      this.gameService.getState(this.code()).subscribe({
+        next: (state) => {
+          if (state.current_round_id) this.lastSeenRoundId = state.current_round_id;
+          this.startStatePolling();
+        },
+        error: () => this.startStatePolling(),
+      });
+    }
+  }
+
+  private startStatePolling(): void {
+    if (this.code()) {
       // Polling: check game state every 2s
       this.pollSub = interval(2000).pipe(
         switchMap(() => this.gameService.getState(this.code()))
